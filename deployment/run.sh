@@ -112,8 +112,10 @@ CONF
 	cat /dev/null > $dir/ca.crt.srl
 	fluentd_user='system.logging.fluentd'
 	kibana_user='system.logging.kibana'
+	curator_user='system.logging.curator'
 	sh scripts/generatePEMCert.sh "$fluentd_user"
 	sh scripts/generatePEMCert.sh "$kibana_user"
+	sh scripts/generatePEMCert.sh "$curator_user"
 
 	# generate java store/trust for the ES SearchGuard plugin
 	sh scripts/generateJKSChain.sh logging-es "$(join , logging-es{,-ops}{,-cluster}{,.${project}.svc.cluster.local})"
@@ -127,7 +129,7 @@ CONF
 
 	# (re)generate secrets
 	echo "Deleting existing secrets"
-	oc delete secret logging-fluentd logging-elasticsearch logging-kibana logging-kibana-proxy logging-kibana-ops-proxy || :
+	oc delete secret logging-fluentd logging-elasticsearch logging-kibana logging-kibana-proxy logging-kibana-ops-proxy logging-curator || :
 
 	echo "Creating secrets"
 	oc secrets new logging-elasticsearch \
@@ -151,11 +153,15 @@ CONF
 	oc secrets new logging-fluentd \
 	    ca=$dir/ca.crt \
 	    key=$dir/${fluentd_user}.key cert=$dir/${fluentd_user}.crt
+	oc secrets new logging-curator \
+	    ca=$dir/ca.crt \
+	    key=$dir/${curator_user}.key cert=$dir/${curator_user}.crt
 
 fi # supporting infrastructure
 
 # (re)generate templates needed
 echo "Creating templates"
+oc delete template --selector logging-infra=curator
 oc delete template --selector logging-infra=kibana
 oc delete template --selector logging-infra=fluentd
 oc delete template --selector logging-infra=elasticsearch
@@ -188,6 +194,7 @@ if [ "${ENABLE_OPS_CLUSTER}" == true ]; then
 	oc process -f templates/kibana.yaml -v "OAP_PUBLIC_MASTER_URL=${public_master_url},OAP_MASTER_URL=${master_url},KIBANA_DEPLOY_NAME=kibana-ops,ES_HOST=logging-es-ops" | oc create -f -
 fi
 oc process -f templates/fluentd.yaml -v "ES_HOST=${es_host},OPS_HOST=${es_ops_host},MASTER_URL=${master_url}"| oc create -f -
+oc process -f templates/curator.yaml -v "ES_HOST=${es_host},OPS_HOST=${es_ops_host},MASTER_URL=${master_url}"| oc create -f -
 
 if [ "${KEEP_SUPPORT}" != true ]; then
 	oc delete template --selector logging-infra=support
@@ -201,6 +208,7 @@ if [ "${KEEP_SUPPORT}" != true ]; then
 	oc process logging-support-pre-template | oc create -f -
 fi
 
+oc delete dc,rc,pod --selector logging-infra=curator
 oc delete dc,rc,pod --selector logging-infra=kibana
 oc delete dc,rc,pod --selector logging-infra=fluentd
 oc delete dc,rc,pod --selector logging-infra=elasticsearch
@@ -215,6 +223,7 @@ if [ "${ENABLE_OPS_CLUSTER}" == true ]; then
 	done
 	oc process logging-kibana-ops-template | oc create -f -
 fi
+oc process logging-curator-template | oc create -f -
 
 
 set +x
