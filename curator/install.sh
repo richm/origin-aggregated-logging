@@ -6,7 +6,7 @@ rpm -q epel-release || yum -y install https://dl.fedoraproject.org/pub/epel/epel
 yum install -y --setopt=tsflags=nodocs \
   python-pip \
   cronie
-pip install elasticsearch-curator
+pip install elasticsearch-curator python-crontab
 yum clean all
 
 # HACK HACK HACK - remove when fixed upstream
@@ -24,6 +24,8 @@ yum clean all
 # HACK HACK HACK - remove when fixed upstream
 
 mkdir -p ${HOME}
+mkdir -p /etc/cron.d/
+chmod og+w /etc/cron.d
 
 if [ -z "$CURATOR_CA" ] ; then
     export CURATOR_CA=/etc/curator/keys/ca
@@ -34,15 +36,3 @@ fi
 if [ -z "$CURATOR_CLIENT_KEY" ] ; then
     export CURATOR_CLIENT_KEY=/etc/curator/keys/key
 fi
-
-# get the current crontab
-cf=`mktemp`
-crontab -u 0 -l > $cf 2> /dev/null || echo ignore empty crontab
-# add our crontab
-cat >> $cf <<EOF
-$CURATOR_CRON_MINUTE $CURATOR_CRON_HOUR * * * /usr/bin/curator --host $ES_HOST --port $ES_PORT --use_ssl --certificate $CURATOR_CA --client-cert $CURATOR_CLIENT_CERT --client-key $CURATOR_CLIENT_KEY delete indices --time-unit $CURATOR_TIME_UNIT --older-than $CURATOR_DELETE_OLDER
-EOF
-# tell cron to use it
-crontab -u 0 $cf
-rm -f $cf
-crontab -u 0 -l

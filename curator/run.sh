@@ -1,6 +1,10 @@
 #!/bin/bash
 
-crontab -l
-while true ; do
-    sleep 60
-done
+# should we even have 'retention' level?  or just project : {unit : value} ?
+#INDEX_MGMT='{"project1":{"delete":{"hours":"30"}},"project2":{"delete":{"days":"10"}},"project3":{"delete":{"days":"10"}},"project4":{"delete":{"months":"3"}},"project5":{"delete":{"weeks":"4"}},"project6":{"delete":{"hours":"168"}}}'
+
+# this will parse out the retention settings, combine like settings, create cron line definitions for them with curator and run the jobs prior to writing to /etc/cron.d/curator
+python create_cron.py "$INDEX_MGMT"
+
+# sleep forever here so that the container doesn't die
+sleep infinity
