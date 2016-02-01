@@ -22,7 +22,7 @@ connection_info = '--host ' + os.getenv('ES_HOST') + ' --port ' + os.getenv('ES_
 base_cmd = '/usr/bin/curator ' + connection_info + ' delete indices --timestring %Y.%m.%d'
 
 curator_settings = {'hours': {}, 'days': {}, 'weeks':{}, 'months':{} };
-default_command = base_cmd + ' --older-than 30 --time-unit days'
+default_command = base_cmd + ' --older-than ' + os.getenv('DEFAULT_DAYS') + ' --time-unit days'
 
 for project in decoded:
     for operation in decoded[project]:
