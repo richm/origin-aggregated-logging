@@ -129,7 +129,7 @@ CONF
 
 	# (re)generate secrets
 	echo "Deleting existing secrets"
-	oc delete secret logging-fluentd logging-elasticsearch logging-kibana logging-kibana-proxy logging-kibana-ops-proxy logging-curator || :
+	oc delete secret logging-fluentd logging-elasticsearch logging-kibana logging-kibana-proxy logging-kibana-ops-proxy logging-curator logging-curator-ops || :
 
 	echo "Creating secrets"
 	oc secrets new logging-elasticsearch \
@@ -154,6 +154,9 @@ CONF
 	    ca=$dir/ca.crt \
 	    key=$dir/${fluentd_user}.key cert=$dir/${fluentd_user}.crt
 	oc secrets new logging-curator \
+	    ca=$dir/ca.crt \
+	    key=$dir/${curator_user}.key cert=$dir/${curator_user}.crt
+	oc secrets new logging-curator-ops \
 	    ca=$dir/ca.crt \
 	    key=$dir/${curator_user}.key cert=$dir/${curator_user}.crt
 
@@ -188,13 +191,14 @@ oc process -f templates/es.yaml -v "${es_params}" | oc create -f -
 es_host=logging-es.${project}.svc.cluster.local
 es_ops_host=${es_host}
 oc process -f templates/kibana.yaml -v "OAP_PUBLIC_MASTER_URL=${public_master_url},OAP_MASTER_URL=${master_url}" | oc create -f -
+oc process -f templates/curator.yaml -v "ES_HOST=${es_host},MASTER_URL=${master_url},CURATOR_DEPLOY_NAME=curator"| oc create -f -
 if [ "${ENABLE_OPS_CLUSTER}" == true ]; then
 	oc process -f templates/es.yaml -v "${es_ops_params}" | oc create -f -
 	es_ops_host=logging-es-ops.${project}.svc.cluster.local
 	oc process -f templates/kibana.yaml -v "OAP_PUBLIC_MASTER_URL=${public_master_url},OAP_MASTER_URL=${master_url},KIBANA_DEPLOY_NAME=kibana-ops,ES_HOST=logging-es-ops" | oc create -f -
+	oc process -f templates/curator.yaml -v "ES_HOST=${es_ops_host},MASTER_URL=${master_url},CURATOR_DEPLOY_NAME=curator-ops"| oc create -f -
 fi
 oc process -f templates/fluentd.yaml -v "ES_HOST=${es_host},OPS_HOST=${es_ops_host},MASTER_URL=${master_url}"| oc create -f -
-oc process -f templates/curator.yaml -v "ES_HOST=${es_host},OPS_HOST=${es_ops_host},MASTER_URL=${master_url}"| oc create -f -
 
 if [ "${KEEP_SUPPORT}" != true ]; then
 	oc delete template --selector logging-infra=support
@@ -217,14 +221,14 @@ for ((n=0;n<${es_cluster_size};n++)); do
 done
 oc process logging-fluentd-template | oc create -f -
 oc process logging-kibana-template | oc create -f -
+oc process logging-curator-template | oc create -f -
 if [ "${ENABLE_OPS_CLUSTER}" == true ]; then
 	for ((n=0;n<${es_ops_cluster_size};n++)); do
 		oc process logging-es-ops-template | oc create -f -
 	done
 	oc process logging-kibana-ops-template | oc create -f -
+	oc process logging-curator-ops-template | oc create -f -
 fi
-oc process logging-curator-template | oc create -f -
-
 
 set +x
 echo 'Success!'

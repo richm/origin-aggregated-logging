@@ -9,7 +9,7 @@ objects:
 - apiVersion: "v1"
   kind: "Template"
   metadata:
-    name: logging-curator-template
+    name: logging-${CURATOR_DEPLOY_NAME}-template
     annotations:
       description: "Template for logging curator deployment."
       tags: "infrastructure"
@@ -18,21 +18,21 @@ objects:
   labels:
     logging-infra: curator
     provider: openshift
-    component: curator
+    component: ${CURATOR_DEPLOY_NAME}
   objects:
   -
     apiVersion: v1
     kind: "DeploymentConfig"
     metadata:
-      name: "logging-curator"
+      name: "logging-${CURATOR_DEPLOY_NAME}"
       labels:
         provider: openshift
-        component: "curator"
+        component: "${CURATOR_DEPLOY_NAME}"
     spec:
       replicas: 1
       selector:
         provider: openshift
-        component: "curator"
+        component: "${CURATOR_DEPLOY_NAME}"
       triggers:
       - type: ConfigChange
       - type: ImageChange
@@ -52,10 +52,10 @@ objects:
         type: Recreate
       template:
         metadata:
-          name: curator
+          name: ${CURATOR_DEPLOY_NAME}
           labels:
             provider: openshift
-            component: "curator"
+            component: "${CURATOR_DEPLOY_NAME}"
         spec:
           serviceAccountName: aggregated-logging-curator
           containers:
@@ -82,22 +82,14 @@ objects:
               value: ${ES_CLIENT_KEY}
             - name: "ES_CA"
               value: ${ES_CA}
-            - name: "OPS_HOST"
-              value: ${OPS_HOST}
-            - name: "OPS_PORT"
-              value: ${OPS_PORT}
-            - name: "OPS_CLIENT_CERT"
-              value: ${OPS_CLIENT_CERT}
-            - name: "OPS_CLIENT_KEY"
-              value: ${OPS_CLIENT_KEY}
-            - name: "OPS_CA"
-              value: ${OPS_CA}
             - name: "INDEX_MGMT"
               value: ${INDEX_MGMT}
+            - name: "DEFAULT_DAYS"
+              value: ${DEFAULT_DAYS}
           volumes:
           - name: certs
             secret:
-              secretName: logging-curator
+              secretName: logging-${CURATOR_DEPLOY_NAME}
 parameters:
 -
   description: "Internal url for reaching the master API to query pod labels"
@@ -124,26 +116,10 @@ parameters:
   name: ES_CA
   value: "/etc/curator/keys/ca"
 -
-  description: "Hostname (or IP) for reaching ElasticSearch for operations"
-  name: OPS_HOST
-  value: "logging-es"
--
-  description: "Port number for reaching ElasticSearch for operations"
-  name: OPS_PORT
-  value: "9200"
--
-  description: "Location of client certificate for authenticating to ElasticSearch for operations"
-  name: OPS_CLIENT_CERT
-  value: "/etc/curator/keys/cert"
--
-  description: "Location of client key for authenticating to ElasticSearch for operations"
-  name: OPS_CLIENT_KEY
-  value: "/etc/curator/keys/key"
--
-  description: "Location of CA cert for validating connectiong to ElasticSearch for operations"
-  name: OPS_CA
-  value: "/etc/curator/keys/ca"
--
   description: "JSON format configuration for index management"
   name: INDEX_MGMT
   value: "{}"
+-
+  description: "The default number of days that logs will be retained for a project if an index management configuration for it is not provided"
+  name: DEFAULT_DAYS
+  value: "30"
