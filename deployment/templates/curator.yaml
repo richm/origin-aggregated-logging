@@ -92,6 +92,8 @@ objects:
               value: ${OPS_CLIENT_KEY}
             - name: "OPS_CA"
               value: ${OPS_CA}
+            - name: "INDEX_MGMT"
+              value: ${INDEX_MGMT}
           volumes:
           - name: certs
             secret:
@@ -141,3 +143,7 @@ parameters:
   description: "Location of CA cert for validating connectiong to ElasticSearch for operations"
   name: OPS_CA
   value: "/etc/curator/keys/ca"
+-
+  description: "JSON format configuration for index management"
+  name: INDEX_MGMT
+  value: "{}"

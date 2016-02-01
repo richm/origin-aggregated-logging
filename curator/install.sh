@@ -26,13 +26,3 @@ yum clean all
 mkdir -p ${HOME}
 mkdir -p /etc/cron.d/
 chmod og+w /etc/cron.d
-
-if [ -z "$CURATOR_CA" ] ; then
-    export CURATOR_CA=/etc/curator/keys/ca
-fi
-if [ -z "$CURATOR_CLIENT_CERT" ] ; then
-    export CURATOR_CLIENT_CERT=/etc/curator/keys/cert
-fi
-if [ -z "$CURATOR_CLIENT_KEY" ] ; then
-    export CURATOR_CLIENT_KEY=/etc/curator/keys/key
-fi

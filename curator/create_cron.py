@@ -18,7 +18,7 @@ settings = sys.argv[1]
 decoded = json.loads(settings)
 #print 'decoded to:', decoded
 
-connection_info = '--host ' + os.getenv('ES_HOST') + ' --port ' + os.getenv('ES_PORT') + ' --use_ssl --certificate ' + os.getenv('CURATOR_CA') + ' --client-cert ' + os.getenv('CURATOR_CLIENT_CERT') + ' --client-key ' + os.getenv('CURATOR_CLIENT_KEY')
+connection_info = '--host ' + os.getenv('ES_HOST') + ' --port ' + os.getenv('ES_PORT') + ' --use_ssl --certificate ' + os.getenv('ES_CA') + ' --client-cert ' + os.getenv('ES_CLIENT_CERT') + ' --client-key ' + os.getenv('ES_CLIENT_KEY')
 base_cmd = '/usr/bin/curator ' + connection_info + ' delete indices --timestring %Y.%m.%d'
 
 curator_settings = {'hours': {}, 'days': {}, 'weeks':{}, 'months':{} };
