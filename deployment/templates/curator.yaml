@@ -92,6 +92,10 @@ objects:
               secretName: logging-${CURATOR_DEPLOY_NAME}
 parameters:
 -
+  name: CURATOR_DEPLOY_NAME
+  description: "Modify to differentiate regular and ops Curator."
+  value: "curator"
+-
   description: "Internal url for reaching the master API to query pod labels"
   name: MASTER_URL
   value: "https://kubernetes.default.svc.cluster.local"
