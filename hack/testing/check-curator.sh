@@ -9,6 +9,7 @@ fi
 if [[ $# -ne 1 ]]; then
   # assuming not using OPS cluster
   CLUSTER="false"
+  ops="-ops"
 else
   CLUSTER="$1"
 fi
@@ -49,7 +50,7 @@ add_message_to_index() {
     ca=/etc/fluent/keys/ca
     cert=/etc/fluent/keys/cert
     key=/etc/fluent/keys/key
-    url="https://logging-es:9200/$1/curatortest/"
+    url="https://logging-es${ops}:9200/$1/curatortest/"
     oc exec $fpod -- curl -s --cacert $ca --cert $cert --key $key -XPOST "$url" -d '{
     "message" : "'"$message"'"
 }'
@@ -63,7 +64,7 @@ while [ -n "$1" ] ; do
 done
 
 # get current curator pod
-curpod=`oc get pods | awk '/-deploy/ {next}; /-build/ {next}; /^logging-curator-.* Running / {print $1}'`
+curpod=`oc get pods | awk -v "pat=^logging-curator${ops}-.* Running" '/-deploy/ {next}; /-build/ {next}; $1 ~ pat {print $1}'`
 # change dc to use env
 INDEX_MGMT='{"project-dev":{"delete":{"hours":"24"}},"project-qe":{"delete":{"days":"7"}},"project-prod":{"delete":{"weeks":"4"}},".operations":{"delete":{"months":"2"}}}'
 oc get dc/logging-curator -o yaml | awk -v sq="'" -v index_mgmt="$INDEX_MGMT" '
@@ -96,7 +97,7 @@ oc scale --replicas=1 dc logging-curator
 ii=120
 incr=10
 while [ $ii -gt 0 ] ; do
-    curpod=`oc get pods | awk '/-deploy/ {next}; /-build/ {next}; /^logging-curator-.* Running / {print $1}'`
+    curpod=`oc get pods | awk -v "pat=^logging-curator${ops}-.* Running" '/-deploy/ {next}; /-build/ {next}; $1 ~ pat {print $1}'`
     if [ -n "$curpod" ] ; then
         break
     fi
@@ -105,7 +106,7 @@ while [ $ii -gt 0 ] ; do
 done
 # query ES
 curout=`mktemp`
-oc exec $curpod -- curator --host logging-es --use_ssl --certificate /etc/curator/keys/ca \
+oc exec $curpod -- curator --host logging-es${ops} --use_ssl --certificate /etc/curator/keys/ca \
    --client-cert /etc/curator/keys/cert --client-key /etc/curator/keys/key --loglevel ERROR \
    show indices --all-indices > $curout 2>&1
 # verify that project-dev-yesterday project-qe-lastweek project-prod-fourweeksago .operations-twomonthsago are deleted
