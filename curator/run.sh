@@ -6,5 +6,5 @@
 # this will parse out the retention settings, combine like settings, create cron line definitions for them with curator and run the jobs prior to writing to /etc/cron.d/curator
 python create_cron.py "$INDEX_MGMT"
 
-# sleep forever here so that the container doesn't die
-sleep infinity
+# use stdbuf to make sure the output is unbuffered
+stdbuf -o 0 crond -n -m ./cron_mail_to_log.sh
