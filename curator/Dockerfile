@@ -23,5 +23,5 @@ ADD run.sh install.sh create_cron.py cron_mail_to_log.sh ${HOME}/
 RUN ${HOME}/install.sh
 
 WORKDIR ${HOME}
-USER root
+USER nobody
 CMD ["sh", "run.sh"]

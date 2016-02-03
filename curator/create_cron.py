@@ -64,8 +64,11 @@ for operation in curator_settings:
             job = my_cron.new(command=tab_command, comment='Generated job based on settings')
             job.every().day()
 
-# run jobs before writing out to /etc/cron.d/curator
+# run jobs immediately
 for job in my_cron:
     job.run()
 
-my_cron.write('/etc/cron.d/curator')
+while True:
+    time.sleep(86400)
+    for job in my_cron:
+        job.run()

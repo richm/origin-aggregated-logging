@@ -26,3 +26,4 @@ yum clean all
 mkdir -p ${HOME}
 mkdir -p /etc/cron.d/
 chmod og+w /etc/cron.d
+chmod og+w /var/run
