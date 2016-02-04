@@ -9,17 +9,16 @@ ENV HOME=/opt/app-root/src \
     ES_PORT=9200 \
     CURATOR_CRON_MINUTE=0 \
     CURATOR_CRON_HOUR=0 \
-    CURATOR_DELETE_OLDER=30 \
-    CURATOR_TIME_UNIT=days \
     ES_CA=/etc/curator/keys/ca \
     ES_CLIENT_CERT=/etc/curator/keys/cert \
-    ES_CLIENT_KEY=/etc/curator/keys/key
+    ES_CLIENT_KEY=/etc/curator/keys/key \
+    INDEX_MGMT="{}"
 
 LABEL io.k8s.description="Curator elasticsearch container for elasticsearch deletion/archival" \
   io.k8s.display-name="Curator 3.4" \
   io.openshift.tags="logging,elk,elasticsearch,curator"
 
-ADD run.sh install.sh create_cron.py cron_mail_to_log.sh ${HOME}/
+ADD run.sh install.sh run_cron.py ${HOME}/
 RUN ${HOME}/install.sh
 
 WORKDIR ${HOME}

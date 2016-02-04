@@ -39,7 +39,54 @@ proxy is required that runs in front of Kibana.
 The deployer enables the user to generate all of the necessary
 key/certs/secrets and deploy all of the components in concert.
 
-## Defining local builds
+#### Curator
+
+Curator allows the admin to remove old data from Elasticsearch on a per-project
+basis.  The deployment configuration for curator provides a parameter called
+`INDEX_MGMT`.  This parameter takes a JSON valued string that looks like this::
+
+    {"$PROJECT_NAME": {"$ACTION": {"$UNIT": "$VALUE"}},
+     "$PROJECT_NAME": {"$ACTION": {"$UNIT": "$VALUE"}},
+     ...
+    }
+
+* $PROJECT_NAME - the actual name of a project - "myapp-devel"
+* $ACTION - the action to take - currently only "delete"
+* $UNIT - one of "days", "weeks", or "months"
+* $VALUE - an integer for the number of units
+
+For example, using::
+
+    {"myapp-dev": {"delete": {"days":  "1"}},
+     "myapp-qe":  {"delete": {"weeks": "1"}},
+     ...
+    }
+
+Every day, curator will run, and will delete log records in the myapp-dev
+project older than 1 day, and records in the myapp-qe project older than 1
+week.
+
+To change the deployment configuration to update the curator configuration, use
+the following::
+
+    # oc edit dc logging-curator
+
+Then add the following to the `INDEX_MGMT` value in the yaml::
+
+    spec.template.spec.containers.env
+    ...
+        name: INDEX_MGMT
+        value: |
+            {"myapp-dev": {"delete": {"days":  "1"}},
+             "myapp-qe":  {"delete": {"weeks": "1"}},
+             ...
+            }
+
+By default curator will run at midnight.  The environment variables
+`CURATOR_CRON_HOUR` AND `CURATOR_CRON_MINUTE` can be used to define another hour
+and minute.
+
+# Defining local builds
 
 Choose the project you want to hold your logging infrastructure. It can be
 any project.

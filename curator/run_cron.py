@@ -3,8 +3,10 @@
 import sys
 import json
 import os
+import time
 
 from crontab import CronTab
+from datetime import datetime
 
 # we can't allow 'hours' since our index timestamp format doesn't allow for that level of granularity
 #allowed_units = {'hours': 'hours', 'days': 'days', 'weeks': 'weeks', 'months': 'months'}
@@ -64,11 +66,22 @@ for operation in curator_settings:
             job = my_cron.new(command=tab_command, comment='Generated job based on settings')
             job.every().day()
 
-# run jobs immediately
-for job in my_cron:
-    job.run()
+def run_all_jobs(joblist):
+    print "logging-curator running [%d] jobs" % len(joblist)
+    for job in joblist:
+        job.run()
+    print "logging-curator run finish"
+
+# run jobs now
+run_all_jobs(my_cron)
+
+thehour = int(os.environ.get('CURATOR_CRON_HOUR', 0))
+theminute = int(os.environ.get('CURATOR_CRON_MINUTE', 0))
 
 while True:
-    time.sleep(86400)
-    for job in my_cron:
-        job.run()
+    # get time when next run should happen
+    nextruntime = time.mktime(datetime.now().replace(hour=thehour, minute=theminute,
+                                                     second=0, microsecond=0).timetuple())+86400
+    # sleep until then
+    time.sleep(nextruntime - time.time())
+    run_all_jobs(my_cron)
