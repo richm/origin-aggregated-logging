@@ -9,9 +9,9 @@ fi
 if [[ $# -ne 1 ]]; then
   # assuming not using OPS cluster
   CLUSTER="false"
-  ops="-ops"
 else
   CLUSTER="$1"
+  ops="-ops"
 fi
 
 TEST_DIVIDER="------------------------------------------"
@@ -64,7 +64,7 @@ while [ -n "$1" ] ; do
 done
 
 # get current curator pod
-curpod=`oc get pods | awk -v "pat=^logging-curator${ops}-.* Running" '/-deploy/ {next}; /-build/ {next}; $1 ~ pat {print $1}'`
+curpod=`oc get pods | awk -v "pat=^logging-curator${ops}-.* Running" '/-deploy/ {next}; /-build/ {next}; $0 ~ pat {print $1}'`
 # change dc to use env
 INDEX_MGMT='{"project-dev":{"delete":{"hours":"24"}},"project-qe":{"delete":{"days":"7"}},"project-prod":{"delete":{"weeks":"4"}},".operations":{"delete":{"months":"2"}}}'
 oc get dc/logging-curator -o yaml | awk -v sq="'" -v index_mgmt="$INDEX_MGMT" '
@@ -97,7 +97,7 @@ oc scale --replicas=1 dc logging-curator
 ii=120
 incr=10
 while [ $ii -gt 0 ] ; do
-    curpod=`oc get pods | awk -v "pat=^logging-curator${ops}-.* Running" '/-deploy/ {next}; /-build/ {next}; $1 ~ pat {print $1}'`
+    curpod=`oc get pods | awk -v "pat=^logging-curator${ops}-.* Running" '/-deploy/ {next}; /-build/ {next}; $0 ~ pat {print $1}'`
     if [ -n "$curpod" ] ; then
         break
     fi
