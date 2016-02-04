@@ -69,7 +69,7 @@ for operation in curator_settings:
 def run_all_jobs(joblist):
     print "logging-curator running [%d] jobs" % len(joblist)
     for job in joblist:
-        job.run()
+        print job.run()
     print "logging-curator run finish"
 
 # run jobs now
