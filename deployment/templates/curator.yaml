@@ -82,8 +82,6 @@ objects:
               value: ${ES_CLIENT_KEY}
             - name: "ES_CA"
               value: ${ES_CA}
-            - name: "INDEX_MGMT"
-              value: ${INDEX_MGMT}
             - name: "DEFAULT_DAYS"
               value: ${DEFAULT_DAYS}
           volumes:
@@ -119,10 +117,6 @@ parameters:
   description: "Location of CA cert for validating connecting to ElasticSearch"
   name: ES_CA
   value: "/etc/curator/keys/ca"
--
-  description: "JSON format configuration for index management"
-  name: INDEX_MGMT
-  value: "{}"
 -
   description: "The default number of days that logs will be retained for a project if an index management configuration for it is not provided"
   name: DEFAULT_DAYS

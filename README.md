@@ -42,13 +42,17 @@ key/certs/secrets and deploy all of the components in concert.
 #### Curator
 
 Curator allows the admin to remove old indices from Elasticsearch on a per-project
-basis.  The deployment configuration for curator provides a parameter called
-`INDEX_MGMT`.  This parameter takes a JSON valued string that looks like this::
+basis.  The pod will read its configuration from a mounted yaml file that
+is structured like this:
 
-    {"$PROJECT_NAME": {"$ACTION": {"$UNIT": "$VALUE"}},
-     "$PROJECT_NAME": {"$ACTION": {"$UNIT": "$VALUE"}},
+    $PROJECT_NAME:
+      $ACTION:
+        $UNIT: $VALUE
+
+    $PROJECT_NAME:
+      $ACTION:
+        $UNIT: $VALUE
      ...
-    }
 
 * $PROJECT_NAME - the actual name of a project - "myapp-devel"
 * $ACTION - the action to take - currently only "delete"
@@ -57,34 +61,32 @@ basis.  The deployment configuration for curator provides a parameter called
 
 For example, using::
 
-    {"myapp-dev": {"delete": {"days":  "1"}},
-     "myapp-qe":  {"delete": {"weeks": "1"}},
+    myapp-dev:
+     delete:
+       days: 1
+
+    myapp-qe:
+      delete:
+        weeks: 1
      ...
-    }
 
 Every day, curator will run, and will delete indices in the myapp-dev
 project older than 1 day, and indices in the myapp-qe project older than 1
 week.
 
-To change the deployment configuration to update the curator configuration, use
-the following::
+To create the curator configuration, do the following:
 
-    # oc edit dc logging-curator
+Create a yaml file with your configuration settings using your favorite editor.
+Next create a secret from your created yaml file:
+`oc secrets new index_management settings=</path/to/your/yaml/file>`
 
-Then add the following to the `INDEX_MGMT` value in the yaml::
+Then mount your created secret as a volume in your Curator DC:
+`oc volumes dc/logging-curator --add --type=secret --secret-name=index_management --mount-path=/etc/curator --name=index_management --overwrite`
 
-    spec.template.spec.containers.env
-    ...
-        name: INDEX_MGMT
-        value: |
-            {"myapp-dev": {"delete": {"days":  "1"}},
-             "myapp-qe":  {"delete": {"weeks": "1"}},
-             ...
-            }
-
-By default curator will run at midnight.  The environment variables
-`CURATOR_CRON_HOUR` AND `CURATOR_CRON_MINUTE` can be used to define another hour
-and minute.
+By default curator will run at midnight and deletes logs older than 30 days.
+The environment variables `CURATOR_CRON_HOUR` AND `CURATOR_CRON_MINUTE` can be
+used to define another hour and minute while `DEFAULT_DAYS` will change the
+default number of days logs will be kept for.
 
 # Defining local builds
 
@@ -129,7 +131,7 @@ you can get from:
     logging-deployment      172.30.90.128:5000/logs/logging-deployment
 
 In order to run a deployment with these images, you would process the
-[deployer template](deployment/deployer.yaml) with the 
+[deployer template](deployment/deployer.yaml) with the
 `IMAGE_PREFIX=172.30.90.128:5000/logs/` parameter. Proceed to the
 [deployer instructions](./deployment) to run a deployment.
 
@@ -148,4 +150,3 @@ order to create everything with the right parameters. E.g.:
 
 There are a number of env vars this script looks at which are useful
 when running directly; check the script headers for details.
-
