@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import sys
-import json
+import yaml
 import os
 import time
 
@@ -16,9 +16,10 @@ allowed_units = {'days': 'days', 'weeks': 'weeks', 'months': 'months'}
 allowed_operations = {'delete': 'delete'}
 curator_settings = {'delete': {}}
 
-settings = sys.argv[1]
+filename = os.getenv('CURATOR_CONF_LOCATION', '/etc/curator') + '/settings'
 
-decoded = json.loads(settings)
+with open(filename, 'r') as stream:
+    decoded = yaml.load(stream)
 
 connection_info = '--host ' + os.getenv('ES_HOST') + ' --port ' + os.getenv('ES_PORT') + ' --use_ssl --certificate ' + os.getenv('ES_CA') + ' --client-cert ' + os.getenv('ES_CLIENT_CERT') + ' --client-key ' + os.getenv('ES_CLIENT_KEY')
 
