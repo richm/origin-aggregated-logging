@@ -60,12 +60,12 @@ is structured like this:
         $UNIT: $VALUE
      ...
 
-* $PROJECT_NAME - the actual name of a project - "myapp-devel"
+* $PROJECT\_NAME - the actual name of a project - "myapp-devel"
 ** For operations logs, use the name `.operations` as the project name
 * $ACTION - the action to take - currently only "delete"
 * $UNIT - one of "days", "weeks", or "months"
 * $VALUE - an integer for the number of units
-* `.defaults` - use `.defaults` as the $PROJECT_NAME to set the defaults for
+* `.defaults` - use `.defaults` as the $PROJECT\_NAME to set the defaults for
 projects that are not specified
 ** runhour: NUMBER - hour of the day in 24 hour format at which to run the
 curator jobs
