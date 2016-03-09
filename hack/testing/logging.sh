@@ -129,6 +129,9 @@ trap "cleanup" EXIT
 echo "[INFO] Starting logging tests at " `date`
 
 ensure_iptables_or_die
+# override LOG_DIR and ARTIFACTS_DIR
+export LOG_DIR=${LOG_DIR:-${TMPDIR:-/tmp}/origin-aggregated-logging/logs}
+export ARTIFACT_DIR=${ARTIFACT_DIR:-${TMPDIR:-/tmp}/origin-aggregated-logging/artifacts}
 os::util::environment::setup_all_server_vars "origin-aggregated-logging/"
 os::util::environment::use_sudo
 reset_tmp_dir
@@ -264,7 +267,16 @@ if [ "$ENABLE_OPS_CLUSTER" = "true" ] ; then
 else
     USE_CLUSTER=
 fi
-os::cmd::expect_success "./e2e-test.sh $USE_CLUSTER"
+# e2e-test runs checks which do not modify any data - safe to use
+# in production environments
+./e2e-test.sh $USE_CLUSTER
+# test-* tests modify data and are not generally safe to use
+# in production environments
+for test in test-*.sh ; do
+    if [ -x ./$test ] ; then
+        ./$test $USE_CLUSTER
+    fi
+done
 popd
 ### finished logging e2e tests ###
 
