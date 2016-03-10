@@ -31,5 +31,5 @@ ADD configs.d/ /etc/fluent/configs.d/
 ADD run.sh generate_throttle_configs.rb ${HOME}/
 
 WORKDIR ${HOME}
-
+USER 0
 CMD ["sh", "run.sh"]
