@@ -316,8 +316,7 @@ module Fluent
         )
       rescue => e
         log.warn "failed to expand `#{str}`", error_class: e.class, error: e.message
-        log.warn_backtrace
-        nil
+        log.error "placeholders #{placeholders}"
       end
 
       class CleanroomExpander
