@@ -31,6 +31,7 @@ ADD configs.d/ /etc/fluent/configs.d/
 ADD run.sh generate_throttle_configs.rb \
     fluentd_es_copy_config.conf fluentd_es_ops_copy_config.conf \
     ${HOME}/
+ADD filter_record_transformer.rb /opt/app-root/src/gems/fluentd-0.12.22/lib/fluent/plugin/filter_record_transformer.rb
 
 WORKDIR ${HOME}
 
