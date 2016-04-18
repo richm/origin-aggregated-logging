@@ -5,12 +5,12 @@ MAINTAINER OpenShift Development <dev@lists.openshift.redhat.com>
 ENV HOME=/opt/app-root/src \
   PATH=/opt/app-root/src/bin:/opt/app-root/bin:$PATH \
   RUBY_VERSION=2.0 \
-  FLUENTD_VERSION=0.12.6 \
+  FLUENTD_VERSION=0.12.13 \
   GEM_HOME=/opt/app-root/src \
   THROTTLE_CONF_LOCATION=/etc/throttle-settings
 
 LABEL io.k8s.description="Fluentd container for collecting of docker container logs" \
-  io.k8s.display-name="Fluentd 0.12.6" \
+  io.k8s.display-name="Fluentd 0.12.13" \
   io.openshift.expose-services="9200:http, 9300:http" \
   io.openshift.tags="logging,elk,fluentd"
 
