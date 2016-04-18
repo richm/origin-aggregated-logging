@@ -100,6 +100,7 @@ module Fluent
           'record'   => record,
         })
         begin
+          log.error "before map:#{@map} record:#{last_record} placeholder_values:#{placeholder_values}"
           new_record = reform(record, placeholder_values)
         rescue => e
           log.error "failed to reform records", error_class: e.class, error: e.message
