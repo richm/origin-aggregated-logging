@@ -99,15 +99,7 @@ module Fluent
           'time'     => @placeholder_expander.time_value(time),
           'record'   => record,
         })
-        begin
-          log.error "before map:#{@map} record:#{last_record} placeholder_values:#{placeholder_values}"
-          new_record = reform(record, placeholder_values)
-        rescue => e
-          log.error "failed to reform records", error_class: e.class, error: e.message
-          log.error "map:#{@map} record:#{last_record} placeholder_values:#{placeholder_values}"
-          raise e
-        end
-          
+        new_record = reform(record, placeholder_values)
         if @renew_time_key && new_record.has_key?(@renew_time_key)
           time = new_record[@renew_time_key].to_i
         end
