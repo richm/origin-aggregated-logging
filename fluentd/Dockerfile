@@ -14,6 +14,8 @@ LABEL io.k8s.description="Fluentd container for collecting of docker container l
   io.openshift.expose-services="9200:http, 9300:http" \
   io.openshift.tags="logging,elk,fluentd"
 
+#  gem install --no-ri fluentd fluent-plugin-kubernetes_metadata_filter fluent-plugin-elasticsearch fluent-plugin-flatten-hash && \
+
 RUN rpmkeys --import file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7 && \
   yum install -y --setopt=tsflags=nodocs \
   gcc-c++ \
@@ -22,7 +24,8 @@ RUN rpmkeys --import file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7 && \
   libcurl-devel \
   make && \
   mkdir -p ${HOME} && \
-  gem install --no-ri fluentd fluent-plugin-kubernetes_metadata_filter fluent-plugin-elasticsearch fluent-plugin-flatten-hash && \
+  curl -s -O https://rmeggins.fedorapeople.org/fluent-plugin-kubernetes_metadata_filter-0.19.0.gem && \
+  gem install --no-ri fluentd fluent-plugin-elasticsearch fluent-plugin-flatten-hash fluent-plugin-kubernetes_metadata_filter-0.19.0.gem && \
   mkdir -p ${THROTTLE_CONF_LOCATION} && \
   touch ${THROTTLE_CONF_LOCATION}/settings
 
@@ -31,7 +34,6 @@ ADD configs.d/ /etc/fluent/configs.d/
 ADD run.sh generate_throttle_configs.rb \
     fluentd_es_copy_config.conf fluentd_es_ops_copy_config.conf \
     ${HOME}/
-ADD filter_record_transformer.rb /opt/app-root/src/gems/fluentd-0.12.22/lib/fluent/plugin/filter_record_transformer.rb
 
 WORKDIR ${HOME}
 
