@@ -36,6 +36,8 @@ USE_LOCAL_SOURCE=${USE_LOCAL_SOURCE:-false}
 TEST_PERF=${TEST_PERF:-false}
 ES_VOLUME=${ES_VOLUME:-/var/lib/es}
 ES_OPS_VOLUME=${ES_OPS_VOLUME:-/var/lib/es-ops}
+USE_JOURNAL=${USE_JOURNAL:-false}
+TEST_MIGRATE_UPGRADE=${TEST_MIGRATE_UPGRADE:-true}
 
 # includes util.sh and text.sh
 source "${OS_ROOT}/hack/cmd_util.sh"
@@ -366,6 +368,20 @@ fi
 
 # start fluentd
 os::cmd::try_until_success "oc get daemonset logging-fluentd" "$(( 1 * TIME_MIN ))"
+if [ "$USE_JOURNAL" = "true" ] ; then
+    # delete the daemonset
+    oc delete daemonset logging-fluentd
+    # change the template to make the default to use journal
+    oc get template logging-fluentd-template -o yaml | \
+        sed '/- name: USE_JOURNAL/,/value:/ s/value: .*$/value: "true"/' | \
+        oc replace -f -
+    # recreate the daemonset
+    oc process logging-fluentd-template | oc create -f -
+    # wait until daemonset is present
+    os::cmd::try_until_success "oc get daemonset logging-fluentd" "$(( 1 * TIME_MIN ))"
+    oc get daemonset logging-fluentd -o yaml
+    oc get pods -l component=fluentd || echo no fluentd
+fi
 os::cmd::expect_success "oc label node --all logging-infra-fluentd=true"
 
 # the old way with dc's

@@ -22,7 +22,7 @@ RUN rpmkeys --import file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7 && \
   libcurl-devel \
   make && \
   mkdir -p ${HOME} && \
-  gem install --no-rdoc --no-ri fluentd:${FLUENTD_VERSION} fluent-plugin-kubernetes_metadata_filter fluent-plugin-elasticsearch fluent-plugin-flatten-hash && \
+  gem install --no-rdoc --no-ri fluentd:${FLUENTD_VERSION} fluent-plugin-kubernetes_metadata_filter fluent-plugin-elasticsearch fluent-plugin-flatten-hash fluent-plugin-systemd systemd-journal fluent-plugin-rewrite-tag-filter && \
   mkdir -p ${THROTTLE_CONF_LOCATION} && \
   touch ${THROTTLE_CONF_LOCATION}/settings
 

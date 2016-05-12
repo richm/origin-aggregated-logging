@@ -63,6 +63,8 @@ objects:
               limits:
                 cpu: 100m
             volumeMounts:
+            - name: runlogjournal
+              mountPath: /run/log/journal
             - name: varlog
               mountPath: /var/log
             - name: varlibdockercontainers
@@ -134,7 +136,12 @@ objects:
               value: ${OPS_COPY_USERNAME}
             - name: "OPS_COPY_PASSWORD"
               value: ${OPS_COPY_PASSWORD}
+            - name: "USE_JOURNAL"
+              value: ${USE_JOURNAL}
           volumes:
+          - name: runlogjournal
+            hostPath:
+              path: /run/log/journal
           - name: varlog
             hostPath:
               path: /var/log
@@ -271,3 +278,7 @@ parameters:
   description: "The version tag of the image to use."
   name: IMAGE_VERSION_DEFAULT
   value: latest
+-
+  description: "Use the journal as input for system logs"
+  name: USE_JOURNAL
+  value: "false"

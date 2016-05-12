@@ -28,9 +28,16 @@ PODS=(`oc get pods | grep 'logging-es-' | grep 'Running' | cut -d" " -f 1`)
 
 # check each container's logs for indices created by fluentd
 for pod in "${PODS[@]}"; do
-  INDICES=(`oc logs $pod | grep 'update_mapping \[fluentd\]' | cut -d"[" -f 6 | cut -d"]" -f 1 | rev | cut -d"." -f 4- | rev | sort | uniq`)
-  INDEX_COUNT=${#INDICES[@]}
-
+  INDEX_COUNT=0
+  for i in $(seq 1 $TIMES); do
+    INDICES=(`oc logs $pod | grep 'update_mapping \[fluentd\]' | cut -d"[" -f 6 | cut -d"]" -f 1 | rev | cut -d"." -f 4- | rev | sort | uniq`)
+    INDEX_COUNT=${#INDICES[@]}
+    if [[ $INDEX_COUNT -eq 0 ]]; then
+      sleep 1
+    else
+      break
+    fi
+  done
   if [[ $INDEX_COUNT -eq 0 ]]; then
     # if we have no indices created -- we have nothing to check
     echo " ! no log indices found"
