@@ -36,6 +36,7 @@ ADD configs.d/ /etc/fluent/configs.d/
 ADD run.sh generate_throttle_configs.rb \
     fluentd_es_copy_config.conf fluentd_es_ops_copy_config.conf \
     ${HOME}/
+ADD out_elasticsearch_dynamic.rb ${HOME}/gems/fluent-plugin-elasticsearch-1.5.0/lib/fluent/plugin/out_elasticsearch_dynamic.rb
 
 WORKDIR ${HOME}
 
