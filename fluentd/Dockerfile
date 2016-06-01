@@ -23,7 +23,7 @@ RUN rpmkeys --import file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7 && \
   libcurl-devel \
   make rubygem-rake rubygem-bundler which libicu-devel zlib-devel && \
   mkdir -p ${HOME} && \
-  git clone https://github.com/richm/fluent-plugin-kubernetes_metadata_filter -b support-journald && \
+  git clone https://github.com/richm/fluent-plugin-kubernetes_metadata_filter -b journald-containerhash && \
   gem install --no-rdoc --no-ri fluentd:${FLUENTD_VERSION} fluent-plugin-elasticsearch fluent-plugin-flatten-hash fluent-plugin-systemd systemd-journal fluent-plugin-rewrite-tag-filter && \
   pushd fluent-plugin-kubernetes_metadata_filter && GEM_HOME=vendor bundle install && GEM_HOME=vendor rake build && popd && \
   ls -alrtF --color=auto /fluent-plugin-kubernetes_metadata_filter && \
