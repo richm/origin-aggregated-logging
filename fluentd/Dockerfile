@@ -25,9 +25,8 @@ RUN rpmkeys --import file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7 && \
   mkdir -p ${HOME} && \
   git clone https://github.com/fabric8io/fluent-plugin-kubernetes_metadata_filter && \
   gem install --no-rdoc --no-ri fluentd:${FLUENTD_VERSION} fluent-plugin-elasticsearch fluent-plugin-flatten-hash fluent-plugin-systemd systemd-journal fluent-plugin-rewrite-tag-filter && \
-  pushd fluent-plugin-kubernetes_metadata_filter && GEM_HOME=vendor bundle install && GEM_HOME=vendor rake build && popd && \
-  ls -alrtF --color=auto /fluent-plugin-kubernetes_metadata_filter && \
-  gem install --no-rdoc --no-ri /fluent-plugin-kubernetes_metadata_filter/pkg/fluent-plugin-kubernetes_metadata_filter-0.22.0.gem && \
+  pushd fluent-plugin-kubernetes_metadata_filter && set -x && GEM_HOME=vendor bundle install && GEM_HOME=vendor bundle exec rake build && popd && \
+  gem install --no-rdoc --no-ri /fluent-plugin-kubernetes_metadata_filter/pkg/fluent-plugin-kubernetes_metadata_filter-0.23.0.gem && \
   mkdir -p ${THROTTLE_CONF_LOCATION} && \
   touch ${THROTTLE_CONF_LOCATION}/settings
 
