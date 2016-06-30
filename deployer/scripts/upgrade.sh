@@ -375,6 +375,9 @@ function patchIfValid() {
 
   if oc patch $object --type=json -p="[$(join , "${actualPatch[@]}")]"; then
     if [[ $isDC = true ]]; then
+      sleep 1
+      oc describe dc $object
+      oc get pods
       oc deploy $object --latest
       waitForChange $currentVersion $object &
       patchPIDs+=( $!)
