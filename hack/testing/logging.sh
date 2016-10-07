@@ -76,6 +76,8 @@ fi
 os::log::stacktrace::install
 os::util::environment::setup_time_vars
 
+HTPASSWD_FILE=${HTPASSWD_FILE:-${BASETMPDIR}/htpasswd}
+
 cd "${OS_ROOT}"
 
 os::build::setup_env
@@ -259,6 +261,10 @@ if [ -n "${KIBANA_HOST:-}" ] ; then
     cp ${SERVER_CONFIG_DIR}/master/master-config.yaml ${SERVER_CONFIG_DIR}/master/master-config.orig.yaml
     openshift ex config patch ${SERVER_CONFIG_DIR}/master/master-config.orig.yaml \
               --patch="{\"assetConfig\": {\"loggingPublicURL\": \"https://${KIBANA_HOST}\"}}" > \
+              ${SERVER_CONFIG_DIR}/master/master-config.yaml
+    cp ${SERVER_CONFIG_DIR}/master/master-config.yaml ${SERVER_CONFIG_DIR}/master/master-config.orig.yaml
+    openshift ex config patch ${SERVER_CONFIG_DIR}/master/master-config.orig.yaml \
+              --patch="{\"oauthConfig\": {\"identityProviders\": [{\"name\":\"htpasswd\", \"challenge\":true, \"login\":true, \"mappingMethod\":\"claim\", \"provider\":{\"apiVersion\":\"v1\", \"kind\":\"HTPasswdPasswordIdentityProvider\", \"file\":\"$HTPASSWD_FILE\"}}]}}" > \
               ${SERVER_CONFIG_DIR}/master/master-config.yaml
 fi
 start_os_server
@@ -484,9 +490,14 @@ os::cmd::expect_success "oadm policy add-scc-to-user privileged system:serviceac
 os::cmd::expect_success "oadm policy add-cluster-role-to-user cluster-reader system:serviceaccount:default:router"
 os::cmd::expect_success "oadm router --create --namespace default --service-account=router \
      --credentials $MASTER_CONFIG_DIR/openshift-router.kubeconfig"
-os::cmd::expect_success "oc login --username=kibtest --password=kibtest"
-os::cmd::expect_success "oc login --username=system:admin"
+os::cmd::expect_success "htpasswd -b -c $HTPASSWD_FILE kibtest kibtest"
+#os::cmd::expect_success "oc login --username=kibtest --password=kibtest"
+#os::cmd::expect_success "oc login --username=system:admin"
+# kibuser can read everything
 os::cmd::expect_success "oadm policy add-cluster-role-to-user cluster-admin kibtest"
+os::cmd::expect_success "htpasswd -b $HTPASSWD_FILE testuser testuser"
+# testuser can read from the test project
+os::cmd::expect_success "oc policy add-role-to-user admin testuser -n test"
 
 if [ "${SETUP_ONLY:-}" = "true" ] ; then
     exit 0
