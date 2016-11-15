@@ -11,7 +11,8 @@ ln -s /usr/share/elasticsearch /usr/share/java/elasticsearch
 # We are currently carrying a patch for sg-2; cannot use normal install
 #/usr/share/elasticsearch/bin/plugin install -b file://${HOME}/search-guard-2-2.3.5.6.zip
 /usr/share/elasticsearch/bin/plugin install io.fabric8/elasticsearch-cloud-kubernetes/${ES_CLOUD_K8S_VER}
-/usr/share/elasticsearch/bin/plugin install io.fabric8.elasticsearch/openshift-elasticsearch-plugin/${OSE_ES_VER}
+#/usr/share/elasticsearch/bin/plugin install io.fabric8.elasticsearch/openshift-elasticsearch-plugin/${OSE_ES_VER}
+/usr/share/elasticsearch/bin/plugin install -b file://${HOME}/openshift-elasticsearch-plugin-${OSE_ES_VER}.zip
 
 mkdir /elasticsearch
 mkdir -p $ES_CONF
