@@ -184,6 +184,20 @@ if [ -n "${KIBANA_OPS_HOST:-}" ] ; then
         fi
     fi
 fi
+if [ -n "${MUX_HOST:-}" ] ; then
+    deployer_args="$deployer_args --from-literal mux-hostname=$MUX_HOST"
+    if getent hosts $MUX_HOST > /dev/null 2>&1 ; then
+        echo mux host $MUX_HOST is `getent hosts $MUX_HOST` `getent ahostsv4 $MUX_HOST`
+    else
+        # does not resolve - add it as an alias for the external IP
+        ip=`getent hosts $PUBLIC_MASTER_HOST | awk '{print $1}'`
+        if grep -q \^$ip /etc/hosts ; then
+            sudo sed -i -e 's/^\('$ip'.*\)$/\1 '$MUX_HOST'/' /etc/hosts
+        else
+            echo $ip $MUX_HOST | sudo tee -a /etc/hosts
+        fi
+    fi
+fi
 os::cmd::expect_success "oc create configmap logging-deployer $deployer_args"
 
 if [ -n "$USE_LOGGING_DEPLOYER" ] ; then
@@ -270,6 +284,7 @@ fi
 os::cmd::try_until_text "oc get pods -l component=es" "Running" "$(( 3 * TIME_MIN ))"
 os::cmd::try_until_text "oc get pods -l component=kibana" "Running" "$(( 3 * TIME_MIN ))"
 os::cmd::try_until_text "oc get pods -l component=curator" "Running" "$(( 3 * TIME_MIN ))"
+os::cmd::try_until_text "oc get pods -l component=mux" "Running" "$(( 3 * TIME_MIN ))"
 if [ "$ENABLE_OPS_CLUSTER" = "true" ] ; then
     # make sure the expected PVC was created and bound
     os::cmd::try_until_text "oc get persistentvolumeclaim es-ops-pvc-1" "Bound" "$(( 1 * TIME_MIN ))"

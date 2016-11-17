@@ -14,19 +14,21 @@ docker_uses_journal() {
     grep -q "^OPTIONS='[^']*--log-driver=journald" /etc/sysconfig/docker
 }
 
-if [ "${USE_JOURNAL:-}" != false ] ; then
-    if [ -z "${JOURNAL_SOURCE:-}" ] ; then
-        if [ -d /var/log/journal ] ; then
-            export JOURNAL_SOURCE=/var/log/journal
-        else
-            export JOURNAL_SOURCE=/run/log/journal
+if [ "${USE_MUX:-}" != "true" ] ; then
+    if [ "${USE_JOURNAL:-}" != false ] ; then
+        if [ -z "${JOURNAL_SOURCE:-}" ] ; then
+            if [ -d /var/log/journal ] ; then
+                export JOURNAL_SOURCE=/var/log/journal
+            else
+                export JOURNAL_SOURCE=/run/log/journal
+            fi
         fi
-    fi
-    if [ -z "${USE_JOURNAL:-}" ] ; then
-        if docker_uses_journal ; then
-            export USE_JOURNAL=true
-        else
-            export USE_JOURNAL=false
+        if [ -z "${USE_JOURNAL:-}" ] ; then
+            if docker_uses_journal ; then
+                export USE_JOURNAL=true
+            else
+                export USE_JOURNAL=false
+            fi
         fi
     fi
 fi
@@ -36,7 +38,12 @@ IPADDR6=`/usr/sbin/ip -6 addr show dev eth0 | grep inet6 | sed "s/[ \t]*inet6 \(
 export IPADDR4 IPADDR6
 
 CFG_DIR=/etc/fluent/configs.d
-ruby generate_throttle_configs.rb
+if [ "${USE_MUX:-}" = "true" ] ; then
+    cp $CFG_DIR/openshift/input-mux-*.conf $CFG_DIR/dynamic
+else
+    ruby generate_throttle_configs.rb
+    rm -f $CFG_DIR/dynamic/input-mux-*.conf
+fi
 
 OPS_COPY_HOST="${OPS_COPY_HOST:-$ES_COPY_HOST}"
 OPS_COPY_PORT="${OPS_COPY_PORT:-$ES_COPY_PORT}"

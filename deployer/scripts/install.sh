@@ -80,6 +80,8 @@ function initialize_install_vars() {
   use_journal=${input_vars[use-journal]:-}
   journal_read_from_head=${input_vars[journal-read-from-head]:-false}
   journal_source=${input_vars[journal-source]:-}
+  mux_hostname=${input_vars[mux-hostname]:-mux.example.com}
+  mux_forward_listen_port=${input_vars[mux-forward-listen-port]:-}
 
   # other env vars used:
   # WRITE_KUBECONFIG, KEEP_SUPPORT, ENABLE_OPS_CLUSTER
@@ -129,6 +131,9 @@ function generate_support_objects() {
                              --{dest-,}ca-cert="$dir/ca.crt" \
                                    $kibana_keys
    # note: route labels are copied from service, no need to add
+  oc create route passthrough --service="logging-mux" \
+                               --hostname="${mux_hostname}" \
+                               --port="mux-forward"
 }
 
 function generate_signer_cert_and_conf() {
@@ -167,6 +172,10 @@ function generate_config() {
     procure_server_cert kibana-ops   # second external cert
     procure_server_cert kibana-internal kibana,kibana-ops,${hostname},${ops_hostname}
 
+    # use or generate mux certs
+    procure_server_cert mux       # external cert, use router cert if not present
+    procure_server_cert mux-internal mux,${mux_hostname}
+
     # use or copy proxy TLS configuration file
     if [ ${input_vars[server-tls.json]+set} ]; then
       echo -e "${input_var[server-tls.json]}" $dir/server-tls.json
@@ -201,10 +210,12 @@ function generate_config() {
     cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 200 | head -n 1 > "$dir/session-secret"
     # generate oauth client secret
     cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 > "$dir/oauth-secret"
+    # generate mux shared_key
+    cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 > "$dir/mux-shared-key"
 
     # (re)generate secrets
     echo "Deleting secrets"
-    oc delete secret logging-fluentd logging-elasticsearch logging-kibana logging-kibana-proxy logging-curator logging-curator-ops || :
+    oc delete secret logging-fluentd logging-elasticsearch logging-kibana logging-kibana-proxy logging-curator logging-curator-ops logging-mux || :
 
     echo "Creating secrets"
     oc secrets new logging-elasticsearch \
@@ -232,13 +243,16 @@ function generate_config() {
     oc secrets new logging-curator-ops \
         ca=$dir/ca.crt \
         key=$dir/${curator_user}.key cert=$dir/${curator_user}.crt
+    oc secrets new logging-mux \
+        mux-key=$dir/mux-internal.key mux-cert=$dir/mux-internal.crt \
+        mux-shared-key=$dir/mux-shared-key
     echo "Attaching secrets to service accounts"
     oc secrets add serviceaccount/aggregated-logging-kibana \
                    logging-kibana logging-kibana-proxy
     oc secrets add serviceaccount/aggregated-logging-elasticsearch \
                    logging-elasticsearch
     oc secrets add serviceaccount/aggregated-logging-fluentd \
-                   logging-fluentd
+                   logging-fluentd logging-mux
     oc secrets add serviceaccount/aggregated-logging-curator \
                    logging-curator
     if [ -n "${input_vars[image-pull-secret]}" ]; then
@@ -361,6 +375,27 @@ function generate_fluentd_template(){
     --param "$image_params"
 } #generate_fluentd_template()
 
+function generate_mux_template(){
+  es_host=logging-es
+  es_ops_host=${es_host}
+  if [ "${input_vars[enable-ops-cluster]}" == true ]; then
+    es_ops_host=logging-es-ops
+  fi
+
+  if [ -n "${mux_forward_listen_port:-}" ] ; then
+      portparam="--param FORWARD_LISTEN_PORT=$mux_forward_listen_port"
+  else
+      portparam=
+  fi
+  create_template_optional_nodeselector "${input_vars[mux-nodeselector]}" mux \
+    --param ES_HOST=${es_host} \
+    --param OPS_HOST=${es_ops_host} \
+    --param MASTER_URL=${master_url} \
+    --param FORWARD_LISTEN_HOST=${mux_hostname} \
+    $portparam \
+    --param "$image_params"
+} #generate_fluentd_template()
+
 ######################################
 #
 # (re)generate templates needed
@@ -371,6 +406,7 @@ function generate_templates() {
   generate_kibana_template
   generate_curator_template
   generate_fluentd_template
+  generate_mux_template
 } #generate_templates()
 
 function generate_curator() {
@@ -389,6 +425,10 @@ function generate_kibana() {
 
 function generate_fluentd() {
   oc new-app logging-fluentd-template
+}
+
+function generate_mux() {
+  oc new-app logging-mux-template
 }
 
 function generate_es() {
@@ -450,6 +490,7 @@ function generate_objects() {
   generate_kibana
   generate_curator
   generate_fluentd
+  generate_mux
 
   for dc in $(oc get dc -l logging-infra -o name); do
     oc deploy $dc --latest
