@@ -1,0 +1,40 @@
+apiVersion: "v1"
+kind: "Template"
+metadata:
+  name: logging-mux-support-template-maker
+  annotations:
+    description: "Template to create template for deploying logging mux support entities"
+    tags: "infrastructure"
+parameters:
+-
+  description: 'The port the forward listener uses for incoming connections (targetPort: mux-forward).'
+  name: FORWARD_LISTEN_PORT
+  value: "24284"
+objects:
+- apiVersion: "v1"
+  kind: "Template"
+  metadata:
+    name: logging-mux-support-template
+    annotations:
+      description: "Template for mux support - the service, etc.."
+      tags: "infrastructure"
+    labels:
+      logging-infra: support
+  labels:
+    logging-infra: support
+    provider: openshift
+    component: support
+  objects:
+  -
+    apiVersion: "v1"
+    kind: "Service"
+    metadata:
+      name: "logging-mux"
+    spec:
+      ports:
+        -
+          port: ${FORWARD_LISTEN_PORT}
+          targetPort: "mux-forward"
+      selector:
+        provider: openshift
+        component: "mux"
