@@ -10,6 +10,8 @@ if [ -z "${MUX_HOST:-}" ] ; then
     exit 1
 fi
 
+FORWARD_LISTEN_PORT=${FORWARD_LISTEN_PORT:-24284}
+
 MASTER_CONFIG_DIR=${MASTER_CONFIG_DIR:-/etc/origin/master}
 
 if [ ! -d $MASTER_CONFIG_DIR ] ; then
@@ -58,8 +60,125 @@ oc secrets new logging-mux \
 oc secrets add serviceaccount/aggregated-logging-fluentd \
    logging-fluentd logging-mux
 
+# create our configmap files
+cat > $workdir/fluent.conf <<EOF
+@include configs.d/openshift/system.conf
+@include configs.d/openshift/input-pre-*.conf
+@include configs.d/user/forward.conf
+@include configs.d/openshift/input-post-*.conf
+##
+<label @INGRESS>
+## filters
+  @include configs.d/openshift/filter-pre-*.conf
+  @include configs.d/openshift/filter-retag-journal.conf
+  @include configs.d/openshift/filter-k8s-meta.conf
+  @include configs.d/openshift/filter-kibana-transform.conf
+  @include configs.d/openshift/filter-k8s-record-transform.conf
+  @include configs.d/openshift/filter-syslog-record-transform.conf
+  @include configs.d/openshift/filter-common-data-model.conf
+  @include configs.d/openshift/filter-post-*.conf
+##
+
+## matches
+  @include configs.d/openshift/output-pre-*.conf
+  @include configs.d/openshift/output-operations.conf
+  @include configs.d/openshift/output-applications.conf
+  # no post - applications.conf matches everything left
+##
+</label>
+EOF
+
+cat > $workdir/forward.conf <<EOF
+<source>
+  @type secure_forward
+  @label @INGRESS
+  port "#{ENV['FORWARD_LISTEN_PORT'] || '24284'}"
+  # bind 0.0.0.0 # default
+  log_level "#{ENV['FORWARD_INPUT_LOG_LEVEL'] || ENV['LOG_LEVEL'] || 'warn'}"
+  self_hostname "#{ENV['FORWARD_LISTEN_HOST'] || 'mux.example.com'}"
+  shared_key    "#{File.open('/etc/fluentd/muxkeys/mux-shared-key') do |f| f.readline end.rstrip}"
+  secure yes
+  cert_path        /etc/fluent/muxkeys/mux-cert
+  private_key_path /etc/fluent/muxkeys/mux-key
+  private_key_passphrase not_used_key_is_unencrypted
+</source>
+EOF
+
+# generate fluentd configmap
+oc create configmap logging-fluentd \
+   --from-file=fluent.conf=$workdir/fluent.conf \
+   --from-file=forward.conf=$workdir/forward.conf
+oc label configmap/logging-mux logging-infra=support
+
 # generate the mux template from the fluentd template
 oc get template logging-fluentd-template -o yaml > $workdir/fluentd.yaml
+
+# create snippet files that we can insert with sed
+cat > $workdir/1 <<EOF
+  -
+    description: 'The default port the forward listener uses for incoming connections (targetPort: mux-forward).'
+    name: FORWARD_LISTEN_PORT
+    value: \${FORWARD_LISTEN_PORT_DEFAULT}
+EOF
+
+cat > $workdir/2 <<EOF
+        provider: openshift
+        component: "mux"
+      triggers: {}
+      strategy:
+        resources: {}
+        rollingParams:
+          intervalSeconds: 1
+          timeoutSeconds: 600
+          updatePeriodSeconds: 1
+        type: Rolling
+EOF
+
+cat > $workdir/3 <<EOF
+            ports:
+            - containerPort: \${FORWARD_LISTEN_PORT}
+              name: "mux-forward"
+EOF
+
+cat > $workdir/4 <<EOF
+          volumeMounts:
+          - mountPath: /etc/fluent/configs.d/user
+            name: config
+            readOnly: true
+          - mountPath: /etc/fluent/keys
+            name: certs
+            readOnly: true
+          - name: muxcerts
+            mountPath: /etc/fluent/muxkeys
+            readOnly: true
+        nodeSelector:
+EOF
+
+cat > $workdir/5 <<EOF
+        volumes:
+        - configMap:
+            name: logging-mux
+          name: config
+        - name: certs
+          secret:
+            secretName: logging-fluentd
+        - name: muxcerts
+          secret:
+            secretName: logging-mux
+    updateStrategy:
+EOF
+
+cat > $workdir/6 <<EOF
+-
+  description: 'The external hostname used to connect to the forward listener.'
+  name: FORWARD_LISTEN_HOST
+  value: "mux.example.com"
+-
+  description: 'The default port the forward listener uses for incoming connections (targetPort: mux-forward).'
+  name: FORWARD_LISTEN_PORT_DEFAULT
+  value: "24284"
+EOF
+
 cp $workdir/fluentd.yaml $workdir/mux.yaml
 sed -i -e s/logging-fluentd-template-maker/logging-mux-template-maker/ \
     -e "s/create template for fluentd/create template for mux/" \
@@ -67,43 +186,29 @@ sed -i -e s/logging-fluentd-template-maker/logging-mux-template-maker/ \
     -e "s/for logging fluentd deployment/for logging mux deployment/" \
     -e "s/logging-infra: fluentd/logging-infra: mux/g" \
     -e "s/component: fluentd/component: mux/" \
-    -e "s,apiVersion: extensions/v1beta1
+    -e "s,apiVersion: extensions/v1beta1,apiVersion: v1," \
+    -e 's/kind: "DaemonSet"/kind: "DeploymentConfig"/' \
+    -e 's/component: "fluentd"/component: "mux"/' \
+    -e 's/name: "logging-fluentd"/name: "logging-mux"/' \
+    -e "s/name: fluentd-elasticsearch/name: mux/" \
+    -e "/  parameters:/r $workdir/1" \
+    -e "/    spec:/a\
+      replicas: 1" \
+    -e "/        matchLabels:/,/          minReadySeconds:/d" \
+    -e "/      selector:/r $workdir/2" \
+    -e "/            imagePullPolicy: Always/r $workdir/3" \
+    -e "/          securityContext:/,/            privileged: true/d" \
+    -e "/          volumeMounts:/,/        nodeSelector:/d" \
+    -e "/        serviceAccountName: aggregated-logging-fluentd/r $workdir/4" \
+    -e "/        volumes:/,/    updateStrategy:/d" \
+    -e "/        terminationGracePeriodSeconds:/r $workdir/5" \
+    -e "/^parameters:/r $workdir/6" \
+    $workdir/mux.yaml
 
-oc create route passthrough \
-   --service="logging-mux" \
-   --hostname="${mux_hostname}" \
-   --port="mux-forward"
+oc new-app --param=FORWARD_LISTEN_HOST=$MUX_HOST -f $workdir/mux.yaml
+oc new-app logging-mux-template
 
+oc create service clusterip logging-mux --tcp=24284:mux-forward
 
-+function generate_mux_template(){
-+  es_host=logging-es
-+  es_ops_host=${es_host}
-+  if [ "${input_vars[enable-ops-cluster]}" == true ]; then
-+    es_ops_host=logging-es-ops
-+  fi
-+
-+  if [ -n "${mux_forward_listen_port:-}" ] ; then
-+      portparam="--param FORWARD_LISTEN_PORT=$mux_forward_listen_port"
-+  else
-+      portparam=
-+  fi
-+  create_template_optional_nodeselector "${input_vars[mux-nodeselector]}" mux \
-+    --param ES_HOST=${es_host} \
-+    --param OPS_HOST=${es_ops_host} \
-+    --param MASTER_URL=${master_url} \
-+    --param FORWARD_LISTEN_HOST=${mux_hostname} \
-+    $portparam \
-+    --param "$image_params"
-+} #generate_fluentd_template()
-
-+  generate_mux_template
-
-+function generate_mux() {
-+  oc new-app logging-mux-template
-+}
-+
-
-+  generate_mux
-
-# need mux pod template
-# need service template
+oc create route passthrough --service="logging-mux" \
+   --hostname="$MUX_HOST" --port="mux-forward"
