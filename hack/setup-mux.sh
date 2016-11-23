@@ -101,11 +101,11 @@ cat > $workdir/forward.conf <<EOF
 <source>
   @type secure_forward
   @label @INGRESS
-  port ${FORWARD_LISTEN_PORT:-24284}
+  port "#{ENV['FORWARD_LISTEN_PORT'] || '24284'}"
   # bind 0.0.0.0 # default
-  log_level ${FORWARD_INPUT_LOG_LEVEL:-warn}
-  self_hostname $MUX_HOST
-  shared_key    "#{File.open('/etc/fluentd/muxkeys/mux-shared-key') do |f| f.readline end.rstrip}"
+  log_level "#{ENV['FORWARD_INPUT_LOG_LEVEL'] || ENV['LOG_LEVEL'] || 'warn'}"
+  self_hostname "#{ENV['FORWARD_LISTEN_HOST'] || 'mux.example.com'}"
+  shared_key    "#{File.open('/etc/fluent/muxkeys/mux-shared-key') do |f| f.readline end.rstrip}"
   secure yes
   cert_path        /etc/fluent/muxkeys/mux-cert
   private_key_path /etc/fluent/muxkeys/mux-key
