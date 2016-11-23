@@ -60,7 +60,7 @@ oc delete -n logging route logging-mux || :
 # add secret for mux
 oc secrets -n logging new logging-mux \
    mux-key=$workdir/mux.key mux-cert=$workdir/mux.crt \
-   mux-shared-key=$workdir/mux-shared-key
+   mux-shared-key=$workdir/mux-shared-key mux-ca=$cacert
 
 # add mux secret to fluentd service account
 oc secrets -n logging add serviceaccount/aggregated-logging-fluentd \
@@ -68,10 +68,7 @@ oc secrets -n logging add serviceaccount/aggregated-logging-fluentd \
 
 # create our configmap files
 cat > $workdir/fluent.conf <<EOF
-#@include configs.d/openshift/system.conf
-<system>
-  log_level trace
-</system>
+@include configs.d/openshift/system.conf
 @include configs.d/openshift/input-pre-*.conf
 @include configs.d/user/forward.conf
 @include configs.d/openshift/input-post-*.conf
@@ -80,6 +77,9 @@ cat > $workdir/fluent.conf <<EOF
 ## filters
   @include configs.d/openshift/filter-pre-*.conf
   @include configs.d/openshift/filter-retag-journal.conf
+  <filter journal.system>
+    @type stdout
+  </filter>
   @include configs.d/openshift/filter-k8s-meta.conf
   @include configs.d/openshift/filter-kibana-transform.conf
   @include configs.d/openshift/filter-k8s-record-transform.conf
@@ -183,8 +183,6 @@ cat > $workdir/5 <<EOF
             value: \${FORWARD_LISTEN_HOST}
           - name: FORWARD_LISTEN_PORT
             value: \${FORWARD_LISTEN_PORT}
-          - name: VERBOSE
-            value: "true"
 EOF
 
 cp $workdir/fluentd.yaml $workdir/mux.yaml
@@ -213,7 +211,23 @@ sed -i -e s/logging-fluentd-template-maker/logging-mux-template-maker/ \
 
 oc new-app -n logging --param=FORWARD_LISTEN_HOST=$MUX_HOST -f $workdir/mux.yaml
 
-oc create -n logging service clusterip logging-mux --tcp=$FORWARD_LISTEN_PORT:mux-forward
+cat <<EOF | oc create -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: logging-mux
+spec:
+  ports:
+    -
+      port: ${FORWARD_LISTEN_PORT}
+      targetPort: mux-forward
+      name: mux-forward
+  selector:
+    provider: openshift
+    component: mux
+EOF
+# this doesn't work - not sure why
+#oc create -n logging service clusterip logging-mux --tcp=$FORWARD_LISTEN_PORT:mux-forward
 
 oc create -n logging route passthrough --service="logging-mux" \
    --hostname="$MUX_HOST" --port="mux-forward"

@@ -106,6 +106,10 @@ cleanup_forward() {
         -e '/<\/match>/ d' | oc replace -f -
   fi
 
+  oc patch daemonset/logging-fluentd --type=json --patch '[
+    {"op":"delete","path":"/spec/template/spec/containers/0/volumeMounts/8"},
+    {"op":"delete","path":"/spec/template/spec/volumes/8"}]'
+
   oc patch configmap/logging-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/secure-forward.conf", "value": "\
 # @type secure_forward\n\
 # self_hostname forwarding-${HOSTNAME}\n\
@@ -134,18 +138,20 @@ update_current_fluentd() {
       </match>' | oc replace -f -
 
   MUX_HOST=${MUX_HOST:-mux.example.com}
-  MUX_IP=$(oc get svc logging-mux -o jsonpath='{.spec.clusterIP}')
-  MUX_SECRET=$(oc get secret/logging-mux --template='{{index .data "mux-shared-key"}}' | base64 -d)
   # ca cert `oc get secret/logging-fluentd --template='{{index .data "ca"}}'`
+  # add a volume and volumemount for the logging-mux secret to fluentd
+  oc patch daemonset/logging-fluentd --type=json --patch '[
+    {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/8","value":{"name":"mux","mountPath":"/etc/fluent/mux","readOnly":true}},
+    {"op":"add","path":"/spec/template/spec/volumes/8","value":{"name":"mux","secret":{"secretName":"logging-mux"}}}]'
   # update configmap secure-forward.conf
   oc patch configmap/logging-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/secure-forward.conf", "value": "\
   @type secure_forward\n\
   self_hostname forwarding-${HOSTNAME}\n\
-  ca_cert_path /etc/fluent/keys/ca\n\
+  ca_cert_path /etc/fluent/mux/mux-ca\n\
   secure yes\n\
-  shared_key '"$MUX_SECRET"'\n\
+  shared_key \"#{File.open('"'"'/etc/fluent/mux/mux-shared-key'"'"') do |f| f.readline end.rstrip}\"\n\
   <server>\n\
-   host '"$MUX_IP"'\n\
+   host logging-mux\n\
    hostlabel '"$MUX_HOST"'\n\
    port 24284\n\
   </server>"}]'
