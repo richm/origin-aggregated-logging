@@ -74,19 +74,6 @@ cat > $workdir/fluent.conf <<EOF
 @include configs.d/openshift/input-post-*.conf
 ##
 <label @INGRESS>
-## filters
-  @include configs.d/openshift/filter-pre-*.conf
-  @include configs.d/openshift/filter-retag-journal.conf
-  <filter journal.system>
-    @type stdout
-  </filter>
-  @include configs.d/openshift/filter-k8s-meta.conf
-  @include configs.d/openshift/filter-kibana-transform.conf
-  @include configs.d/openshift/filter-k8s-record-transform.conf
-  @include configs.d/openshift/filter-syslog-record-transform.conf
-  @include configs.d/openshift/filter-common-data-model.conf
-  @include configs.d/openshift/filter-post-*.conf
-##
 
 ## matches
   @include configs.d/openshift/output-pre-*.conf
