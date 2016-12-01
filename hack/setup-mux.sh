@@ -74,6 +74,18 @@ cat > $workdir/fluent.conf <<EOF
 @include configs.d/openshift/input-post-*.conf
 ##
 <label @INGRESS>
+## filters
+  @include configs.d/openshift/filter-pre-*.conf
+<filter **>
+  @type record_transformer
+  enable_ruby
+  auto_typecast
+  <record>
+    pipeline_metadata {"collector":{"ipaddr4":"\${record['pipeline_metadata']['collector']['ipaddr4']}","ipaddr6":"\${record['pipeline_metadata']['collector']['ipaddr6']}","inputname":"\${record['pipeline_metadata']['collector']['inputname']}","name":"\${record['pipeline_metadata']['collector']['name']}","received_at":"\${record['pipeline_metadata']['collector']['received_at']}","version":"\${record['pipeline_metadata']['collector']['version']}"},"normalizer":{"ipaddr4":"\${ENV['IPADDR4']}","ipaddr6":"\${ENV['IPADDR6']}","inputname":"fluent-plugin-secure_forward","name":"fluentd openshift","received_at":"\${(Time.at(time) > Time.now) ? (Time.new((time.year - 1), time.month, time.day, time.hour, time.min, time.sec, time.utc_offset).to_datetime.to_s) : (time.to_datetime.to_s)}","version":"0.12.29 1.4.0"}}
+  </record>
+</filter>
+  @include configs.d/openshift/filter-post-*.conf
+##
 
 ## matches
   @include configs.d/openshift/output-pre-*.conf
@@ -218,3 +230,14 @@ EOF
 
 oc create -n logging route passthrough --service="logging-mux" \
    --hostname="$MUX_HOST" --port="mux-forward"
+
+# test with openssl s_client like this:
+## openssl s_client -quiet -servername mux.example.com -connect mux.example.com:443
+# depth=1 CN = openshift-signer@1480618407
+# verify return:1
+# depth=0 CN = mux
+# verify return:1
+# �Y*,�auth��keepalive��
+# ��PONG´invalid ping message��
+# note the garbage looking message above - that means you are talking directly to the
+# fluentd secure_forward, not an http proxy/router

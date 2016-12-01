@@ -28,11 +28,30 @@ fi
 
 PROJ_PREFIX=project.
 
-oc login --username=kibtest --password=kibtest
-test_token="$(oc whoami -t)"
-test_name="$(oc whoami)"
-test_ip="127.0.0.1"
-oc login --username=system:admin
+# $1 - es pod name
+# $2 - es hostname (e.g. logging-es or logging-es-ops)
+# $3 - index name (e.g. project.logging, project.test, .operations, etc.)
+# $4 - _count or _search
+# $5 - field to search
+# $6 - search string
+# stdout is the JSON output from Elasticsearch
+# stderr is curl errors
+query_es_from_es() {
+    oc exec $1 -- curl --connect-timeout 1 -s -k \
+       --cert /etc/elasticsearch/secret/admin-cert --key /etc/elasticsearch/secret/admin-key \
+       https://${2}:9200/${3}*/${4}\?q=${5}:${6}
+}
+
+get_count_from_json() {
+    python -c 'import json, sys; print json.loads(sys.stdin.read())["count"]'
+}
+
+# $1 - unique value to search for in es
+add_test_message() {
+    local kib_pod=`get_running_pod kibana`
+    oc exec $kib_pod -c kibana -- curl --connect-timeout 1 -s \
+       http://localhost:5601/$1 > /dev/null 2>&1
+}
 
 # $1 - shell command or function to call to test if wait is over -
 #      this command/function should return true if the condition
@@ -106,9 +125,11 @@ cleanup_forward() {
         -e '/<\/match>/ d' | oc replace -f -
   fi
 
-  oc patch daemonset/logging-fluentd --type=json --patch '[
-    {"op":"delete","path":"/spec/template/spec/containers/0/volumeMounts/8"},
-    {"op":"delete","path":"/spec/template/spec/volumes/8"}]'
+  if oc get daemonset/logging-fluentd -o yaml | grep -q /etc/fluent/mux ; then
+      oc patch daemonset/logging-fluentd --type=json --patch '[
+       {"op":"remove","path":"/spec/template/spec/containers/0/volumeMounts/8"},
+       {"op":"remove","path":"/spec/template/spec/volumes/8"}]'
+  fi
 
   oc patch configmap/logging-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/secure-forward.conf", "value": "\
 # @type secure_forward\n\
@@ -163,32 +184,10 @@ update_current_fluentd() {
   wait_for_pod_action start fluentd
 }
 
-# $1 - kibana pod name
-# $2 - es hostname (e.g. logging-es or logging-es-ops)
-# $3 - project name (e.g. logging, test, .operations, etc.)
-# $4 - _count or _search
-# $5 - field to search
-# $6 - search string
-# stdout is the JSON output from Elasticsearch
-# stderr is curl errors
-curl_es_from_kibana() {
-    oc exec $1 -c kibana -- curl --connect-timeout 1 -s -k \
-       --cert /etc/kibana/keys/cert --key /etc/kibana/keys/key \
-       -H "X-Proxy-Remote-User: $test_name" -H "Authorization: Bearer $test_token" -H "X-Forwarded-For: 127.0.0.1" \
-       https://${2}:9200/${3}*/${4}\?q=${5}:${6}
-}
-
-# stdin is JSON output from Elasticsearch for _count search
-# stdout is the integer count
-# stderr is JSON parsing errors if bogus input (i.e. search error, empty JSON)
-get_count_from_json() {
-    python -c 'import json, sys; print json.loads(sys.stdin.read())["count"]'
-}
-
 # return true if the actual count matches the expected count, false otherwise
 test_count_expected() {
     myfield=${myfield:-message}
-    nrecs=`curl_es_from_kibana $kpod $myhost $myproject _count $myfield $mymessage | \
+    local nrecs=`query_es_from_es $espod $myhost $myproject _count $myfield $mymessage | \
            get_count_from_json`
     test "$nrecs" = $expected
 }
@@ -197,59 +196,48 @@ test_count_expected() {
 # the actual count
 test_count_err() {
     myfield=${myfield:-message}
-    nrecs=`curl_es_from_kibana $kpod $myhost $myproject _count $myfield $mymessage | \
+    nrecs=`query_es_from_es $espod $myhost $myproject _count $myfield $mymessage | \
            get_count_from_json`
     echo Error: found $nrecs for project $myproject message $mymessage - expected $expected
     for thetype in _count _search ; do
-        curl_es_from_kibana $kpod $myhost $myproject $thetype $myfield $mymessage | python -mjson.tool
+        query_es_from_es $espod $myhost $myproject $thetype $myfield $mymessage | python -mjson.tool
     done
 }
 
 write_and_verify_logs() {
     # expected number of matches
     expected=$1
-
-    # write a log message to the test app
-    logmessage=`uuidgen`
-    curl --connect-timeout 1 -s http://$testip:$testport/$logmessage > /dev/null 2>&1 || echo will generate a 404
-
-    # write a message to the system log
-    logmessage2=`uuidgen`
-    logger -i -p local6.info -t $logmessage2 $logmessage2
-
-    # get current kibana pod
-    kpod=`get_running_pod kibana`
-    if [ -z "$kpod" ] ; then
-        echo Error: no kibana pod found
-        oc get pods
-        return 1
+    local es_pod=`get_running_pod es`
+    local es_ops_pod=`get_running_pod es-ops`
+    if [ -z "$es_ops_pod" ] ; then
+        es_ops_pod=$es_pod
     fi
+    local uuid_es=`uuidgen`
+    local uuid_es_ops=`uuidgen`
 
-    rc=0
+    add_test_message $uuid_es
+    logger -i -p local6.info -t $uuid_es_ops $uuid_es_ops
+
+    local rc=0
+
     # poll for logs to show up
-    if myhost=logging-es myproject=${PROJ_PREFIX}test mymessage=$logmessage expected=$expected \
-             wait_until_cmd_or_err test_count_expected test_count_err 60 ; then
-        if [ -n "$VERBOSE" ] ; then
-            echo good - found $expected records project test for $logmessage
-        fi
+
+    if espod=$es_pod myhost=logging-es myproject=project.logging mymessage=$uuid_es expected=$expected \
+            wait_until_cmd_or_err test_count_expected test_count_err 600 ; then
+        echo good - $FUNCNAME: found 1 record project logging for $uuid_es
     else
-        echo failed - $0: not found $expected records project test for $logmessage
+        echo failed - $FUNCNAME: not found 1 record project logging for $uuid_es
         rc=1
     fi
 
-    if myhost=logging-es${ops} myproject=.operations mymessage=$logmessage2 expected=$expected myfield=systemd.u.SYSLOG_IDENTIFIER \
-             wait_until_cmd_or_err test_count_expected test_count_err 60 ; then
-        if [ -n "$VERBOSE" ] ; then
-            echo good - found $expected records project .operations for $logmessage2
-        fi
+    if espod=$es_ops_pod myhost=logging-es-ops myproject=.operations mymessage=$uuid_es_ops expected=$expected myfield=systemd.u.SYSLOG_IDENTIFIER \
+            wait_until_cmd_or_err test_count_expected test_count_err 600 ; then
+        echo good - $FUNCNAME: found 1 record project .operations for $uuid_es_ops
     else
-        echo failed - $0: not found $expected records project .operations for $logmessage2
+        echo failed - $FUNCNAME: not found 1 record project .operations for $uuid_es_ops
         rc=1
     fi
 
-    if [ $rc -ne 0 ]; then
-        echo $0: returning $rc ...
-    fi
     return $rc
 }
 
@@ -265,17 +253,24 @@ restart_fluentd() {
 
 TEST_DIVIDER="------------------------------------------"
 
-# this is the OpenShift origin sample app
-testip=$(oc get -n test --output-version=v1beta3 --template="{{ .spec.clusterIP }}" service frontend)
-testport=5432
-
-# configure fluentd to just use the same ES instance for the copy
-# cause messages to be written to a container - verify that ES contains
-# two copies
-# cause messages to be written to the system log - verify that OPS contains
-# two copies
+oc project logging
 
 fpod=`get_running_pod fluentd`
+
+if [ -z "$fpod" ] ; then
+    echo Error: fluentd is not running
+    exit 1
+fi
+
+if [ -z "`get_running_pod kibana`" ] ; then
+    echo Error: kibana is not running
+    exit 1
+fi
+
+if [ -z "`get_running_pod es`" ] ; then
+    echo Error: es is not running
+    exit 1
+fi
 
 # run test to make sure fluentd is working normally - no forwarding
 write_and_verify_logs 1 || {
