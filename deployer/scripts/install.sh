@@ -130,7 +130,7 @@ function generate_support_objects() {
                              --hostname="${ops_hostname}" \
                              --{dest-,}ca-cert="$dir/ca.crt" \
                                    $kibana_keys
-   # note: route labels are copied from service, no need to add
+  # note: route labels are copied from service, no need to add
   oc create route passthrough --service="logging-mux" \
                                --hostname="${mux_hostname}" \
                                --port="mux-forward"
@@ -289,6 +289,10 @@ function generate_configmaps() {
       --from-file=secure-forward.conf=conf/secure-forward.conf || return
     oc label configmap/logging-fluentd logging-infra=support
 
+    oc create configmap logging-mux \
+      --from-file=fluent.conf=conf/fluent.conf \
+      --from-file=secure-forward.conf=conf/secure-forward.conf || return
+    oc label configmap/logging-mux logging-infra=support
 }
 
 function create_template_optional_nodeselector(){

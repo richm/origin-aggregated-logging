@@ -148,7 +148,7 @@ objects:
           volumes:
           - name: config
             configMap:
-              name: logging-fluentd
+              name: logging-mux
           - name: certs
             secret:
               secretName: logging-fluentd

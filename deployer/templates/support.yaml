@@ -137,6 +137,7 @@ objects:
         -
           port: ${FORWARD_LISTEN_PORT}
           targetPort: "mux-forward"
+          name: mux-forward
       selector:
         provider: openshift
         component: "mux"
