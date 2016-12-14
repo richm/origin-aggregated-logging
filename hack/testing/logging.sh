@@ -335,24 +335,24 @@ os::cmd::try_until_text "oc get pods -l component=fluentd" "Running" "$(( 5 * TI
 function wait_for_app() {
   echo "[INFO] Waiting for app in namespace $1"
   echo "[INFO] Waiting for database pod to start"
-  os::cmd::try_until_text "oc get -n $1 pods -l name=database" 'Running' "$(( 2 * TIME_MIN ))"
+  os::cmd::try_until_text "oc get -n $1 pods -l name=database" 'Running' "$(( 5 * TIME_MIN ))"
 
   echo "[INFO] Waiting for database service to start"
-  os::cmd::try_until_text "oc get -n $1 services" 'database' "$(( 2 * TIME_MIN ))"
+  os::cmd::try_until_text "oc get -n $1 services" 'database' "$(( 5 * TIME_MIN ))"
   DB_IP=$(oc get -n $1 --output-version=v1beta3 --template="{{ .spec.clusterIP }}" service database)
 
   echo "[INFO] Waiting for frontend pod to start"
-  os::cmd::try_until_text "oc get -n $1 pods" 'frontend.+Running' "$(( 2 * TIME_MIN ))"
+  os::cmd::try_until_text "oc get -n $1 pods" 'frontend.+Running' "$(( 5 * TIME_MIN ))"
 
   echo "[INFO] Waiting for frontend service to start"
-  os::cmd::try_until_text "oc get -n $1 services" 'frontend' "$(( 2 * TIME_MIN ))"
+  os::cmd::try_until_text "oc get -n $1 services" 'frontend' "$(( 5 * TIME_MIN ))"
   FRONTEND_IP=$(oc get -n $1 --output-version=v1beta3 --template="{{ .spec.clusterIP }}" service frontend)
 
   echo "[INFO] Waiting for database to start..."
-  os::cmd::try_until_success "curl --max-time 2 --fail --silent 'http://${DB_IP}:5434'" $((3*TIME_MIN))
+  os::cmd::try_until_success "curl --max-time 2 --fail --silent 'http://${DB_IP}:5434'" $((5*TIME_MIN))
 
   echo "[INFO] Waiting for app to start..."
-  os::cmd::try_until_success "curl --max-time 2 --fail --silent 'http://${FRONTEND_IP}:5432'" $((2*TIME_MIN))
+  os::cmd::try_until_success "curl --max-time 2 --fail --silent 'http://${FRONTEND_IP}:5432'" $((5*TIME_MIN))
 
   echo "[INFO] Testing app"
   os::cmd::try_until_text "curl -s -X POST http://${FRONTEND_IP}:5432/keys/foo -d value=1337" "Key created" "$((60*TIME_SEC))"
