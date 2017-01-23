@@ -24,6 +24,7 @@ LABEL io.k8s.description="Curator elasticsearch container for elasticsearch dele
   io.k8s.display-name="Curator ${CURATOR_VER}" \
   io.openshift.tags="logging,elk,elasticsearch,curator"
 
+ADD does_not_exist
 ADD run_cron.py install.sh run.sh ${HOME}/
 RUN ${HOME}/install.sh
 
