@@ -141,7 +141,7 @@ objects:
       dockerStrategy:
         from:
           kind: DockerImage
-          name: openshift/base-centos7
+          name: registry.centos.org/sclo/ruby-23-centos7:latest
       type: Docker
     triggers:
     - type: ConfigChange

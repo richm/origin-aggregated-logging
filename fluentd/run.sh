@@ -2,10 +2,10 @@
 
 if [[ $VERBOSE ]]; then
   set -ex
-  fluentdargs="-vv"
+  fluentdargs="-vv --log-event-verbose"
 else
   set -e
-  fluentdargs=
+  fluentdargs="-q --suppress-config-dump"
 fi
 
 docker_uses_journal() {
@@ -34,6 +34,13 @@ fi
 IPADDR4=`/usr/sbin/ip -4 addr show dev eth0 | grep inet | sed -e "s/[ \t]*inet \([0-9.]*\).*/\1/"`
 IPADDR6=`/usr/sbin/ip -6 addr show dev eth0 | grep inet6 | sed "s/[ \t]*inet6 \([a-f0-9:]*\).*/\1/"`
 export IPADDR4 IPADDR6
+if [ -f /etc/docker-hostname ] ; then
+    DOCKER_HOSTNAME=`cat /etc/docker-hostname`
+else
+    DOCKER_HOSTNAME=`hostname`
+fi
+export DOCKER_HOSTNAME
+export COLLECTOR_VERSION="$FLUENTD_VERSION 1.5.0"
 
 CFG_DIR=/etc/fluent/configs.d
 ruby generate_throttle_configs.rb
@@ -59,6 +66,5 @@ else
     echo > $CFG_DIR/dynamic/es-copy-config.conf
     echo > $CFG_DIR/dynamic/es-ops-copy-config.conf
 fi
-
 
 exec fluentd $fluentdargs
