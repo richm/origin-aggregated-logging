@@ -433,6 +433,20 @@ fi
 
 # when fluentd starts up it may take a while before it catches up with all of the logs
 # let's wait until that happens
+for pos in /var/log/es-containers.log.pos /var/log/node.log.pos /var/log/journal.pos ; do
+    if [ -f $pos ] ; then
+        echo $pos
+        cat $pos
+    fi
+done
+sleep 30
+for pos in /var/log/es-containers.log.pos /var/log/node.log.pos /var/log/journal.pos ; do
+    if [ -f $pos ] ; then
+        echo $pos
+        cat $pos
+    fi
+done
+
 wait_for_fluentd_to_catch_up
 
 if [ "$TEST_PERF" = "true" ] ; then
