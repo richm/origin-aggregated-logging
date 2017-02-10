@@ -433,20 +433,9 @@ fi
 
 # when fluentd starts up it may take a while before it catches up with all of the logs
 # let's wait until that happens
-for pos in /var/log/es-containers.log.pos /var/log/node.log.pos /var/log/journal.pos ; do
-    if [ -f $pos ] ; then
-        echo $pos
-        cat $pos
-    fi
-done
-sleep 30
-for pos in /var/log/es-containers.log.pos /var/log/node.log.pos /var/log/journal.pos ; do
-    if [ -f $pos ] ; then
-        echo $pos
-        cat $pos
-    fi
-done
-
+# first, wait for /var/log/journal.pos to be present, or both of the other files
+os::cmd::try_until_success "test -f /var/log/journal.pos || test -f /var/log/es-containers.log.pos -a -f /var/log/node.log.pos" "$(( 3 * TIME_MIN ))"
+# then make sure fluentd is sending those records to ES
 wait_for_fluentd_to_catch_up
 
 if [ "$TEST_PERF" = "true" ] ; then
