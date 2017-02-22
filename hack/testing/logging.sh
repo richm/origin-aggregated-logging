@@ -247,6 +247,17 @@ else
     USE_CLUSTER=
 fi
 
+### many of the tests require the logging-fluentd-template ###
+### remove this when we port the tests not to use the template ###
+oc new-app --param MASTER_URL=${MASTER_URL:-https://kubernetes.default.svc.cluster.local} \
+   --param ES_HOST=logging-es --param OPS_HOST=logging-es-ops \
+   --param IMAGE_VERSION_DEFAULT=latest --param IMAGE_PREFIX_DEFAULT=$imageprefix \
+   --param USE_JOURNAL=${USE_JOURNAL:-""} \
+   --param JOURNAL_SOURCE=${JOURNAL_SOURCE:-""} \
+   --param JOURNAL_READ_FROM_HEAD=${JOURNAL_READ_FROM_HEAD:-false} \
+   -f $OS_O_A_L_DIR/deployer/templates/fluentd.yaml
+### remove this when we port the tests not to use the template ###
+
 # when fluentd starts up it may take a while before it catches up with all of the logs
 # let's wait until that happens
 wait_for_fluentd_to_catch_up
