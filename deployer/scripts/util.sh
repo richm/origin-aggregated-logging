@@ -526,18 +526,40 @@ function wait_for_fluentd_to_catch_up() {
         rc=1
     fi
 
+    is_mux_retag=${is_mux_retag:-""}
+    if [ -n "$is_mux_retag" ]; then
+        timeout=60
+    fi
     if espod=$es_ops_pod myproject=.operations mymessage=$uuid_es_ops expected=$expected myfield=systemd.u.SYSLOG_IDENTIFIER \
             wait_until_cmd_or_err test_count_expected test_count_err $timeout ; then
         echo good - $FUNCNAME: found $expected record project .operations for $uuid_es_ops
     else
-        echo failed - $FUNCNAME: not found $expected record project .operations for $uuid_es_ops after $timeout seconds
-        echo "Checking journal for $uuid_es_ops..."
-        if journalctl | grep $uuid_es_ops ; then
-            echo "Found $uuid_es_ops in journal"
+        if [ -z "$is_mux_retag" ]; then
+            echo failed - $FUNCNAME: not found $expected record project .operations for $uuid_es_ops after $timeout seconds
+            echo "Checking journal for $uuid_es_ops..."
+            if journalctl | grep $uuid_es_ops ; then
+                echo "Found $uuid_es_ops in journal"
+            else
+                echo "Unable to find $uuid_es_ops in journal"
+            fi
+            rc=1
         else
-            echo "Unable to find $uuid_es_ops in journal"
+            echo good - $FUNCNAME: not found $expected record project .operations for $uuid_es_ops as expected
+            timeout=600
+            if espod=$es_pod myhost=logging-es myproject=project.logging mymessage=$uuid_es_ops expected=$expected \
+                    wait_until_cmd_or_err test_count_expected test_count_err $timeout ; then
+                echo good - $FUNCNAME: found $expected record project project.logging logging for $uuid_es_ops
+            else
+                echo failed - $FUNCNAME: not found $expected record project project.logging logging for $uuid_es_ops
+                echo "Checking journal for $uuid_es_ops..."
+                if journalctl | grep $uuid_es_ops ; then
+                    echo "Found $uuid_es_ops in journal"
+                else
+                    echo "Unable to find $uuid_es_ops in journal"
+                fi
+                rc=1
+            fi
         fi
-        rc=1
     fi
 
     if [ -n "${1:-}" ] ; then
