@@ -50,6 +50,12 @@ cleanup_forward() {
 
   POD=$(oc get pods -l component=forward-fluentd -o name)
 
+  oc patch configmap/logging-forward-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/filter-retag-test-client.conf", "value": "\
+# <match **>\n\
+#   @type rewrite_tag_filter\n\
+#   rewriterule0 _TRANSPORT .+ project.mux\n\
+# </match>"}]'
+
   oc patch configmap/logging-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/secure-forward.conf", "value": "\
 # @type secure_forward\n\
 # self_hostname forwarding-'${HOSTNAME}'\n\
@@ -78,6 +84,12 @@ update_current_fluentd() {
 
   POD=$(oc get pods -l component=forward-fluentd -o name)
   FLUENTD_FORWARD=$(oc get $POD --template='{{.status.podIP}}')
+
+  oc patch configmap/logging-forward-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/filter-retag-test-client.conf", "value": "\
+  <match **>\n\
+    @type rewrite_tag_filter\n\
+    rewriterule0 _TRANSPORT .+ project.mux\n\
+  </match>"}]'
 
   # update configmap secure-forward.conf
   oc patch configmap/logging-fluentd --type=json --patch '[{ "op": "replace", "path": "/data/secure-forward.conf", "value": "\
