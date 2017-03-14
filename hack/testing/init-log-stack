@@ -13,7 +13,6 @@ pushd $OS_ANSIBLE_DIR
 # these should be interpreted as python
 cat > ansible.inventory  << EOL
 [oo_first_master]
-localhost  ansible_connection=local
 openshift
 
 [oo_first_master:vars]
