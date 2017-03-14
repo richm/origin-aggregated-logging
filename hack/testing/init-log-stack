@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/bash -x
 
-OS_ANSIBLE_VERBOSITY=${OS_ANSIBLE_VERBOSITY:-"vv"}
+OS_ANSIBLE_VERBOSITY=${OS_ANSIBLE_VERBOSITY:-"vvv"}
 OS_VERSION=${OS_VERSION:-v1.5.0-alpha.2}
 
 ANSIBLE_PLAYBOOK_ARGS=${ANSIBLE_PLAYBOOK_ARGS:-""}
@@ -10,7 +10,7 @@ source $OS_O_A_L_DIR/hack/testing/build-images
 # init inventory file
 pushd $OS_ANSIBLE_DIR
 
-MYIPADDR=`oc project logging | awk ':' '{print $2}' | sed -e "s/\/\///"``
+MYIPADDR=`oc project logging | awk -F':' '{print $2}' | sed -e "s/\/\///"``
 
 # these should be interpreted as python
 cat > ansible.inventory  << EOL
