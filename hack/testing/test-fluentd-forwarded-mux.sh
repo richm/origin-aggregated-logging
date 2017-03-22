@@ -195,13 +195,13 @@ espod=`get_running_pod es`
 echo $espod
 oc exec $espod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
    --key /etc/elasticsearch/secret/admin-key \
-   'https://logging-es:9200/_cat/indices?v'
+   'https://localhost:9200/_cat/indices?v'
 
 esopspod=`get_running_pod es-ops`
 echo $esopspod
 oc exec $esopspod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
        --key /etc/elasticsearch/secret/admin-key \
-       'https://logging-es-ops:9200/_cat/indices?v'
+       'https://localhost:9200/_cat/indices?v'
 
 fpod=`get_running_pod fluentd`
 echo $fpod
