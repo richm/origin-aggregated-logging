@@ -197,7 +197,8 @@ oc exec $espod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
    --key /etc/elasticsearch/secret/admin-key \
    'https://localhost:9200/_cat/indices?v'
 
-esopspod=${`get_running_pod es-ops`:-$espod}
+esopspod=`get_running_pod es-ops`
+esopspod=${esopspod:-$espod}
 echo $esopspod
 oc exec $esopspod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
        --key /etc/elasticsearch/secret/admin-key \
