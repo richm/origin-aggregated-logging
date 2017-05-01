@@ -30,10 +30,13 @@ LABEL io.k8s.description="Elasticsearch container to serve as EFK aggregated log
 ADD elasticsearch.repo /etc/yum.repos.d/elasticsearch.repo
 # install the RPMs in a separate step so it can be cached
 RUN rpm --import https://packages.elastic.co/GPG-KEY-elasticsearch && \
+    rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     yum install -y --setopt=tsflags=nodocs \
                 java-1.8.0-openjdk-headless \
-                elasticsearch-${ES_VER} && \
+                elasticsearch-${ES_VER} python-pip && \
     yum clean all
+
+RUN pip install watches
 
 ADD sgconfig/ ${HOME}/sgconfig/
 ADD index_templates/ /usr/share/elasticsearch/index_templates/
