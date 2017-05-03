@@ -17,12 +17,13 @@
 #
 
 # TODO: try re-use code from ./run.sh
+set -x
 ES_REST_BASEURL=https://localhost:9200
 EXPECTED_RESPONSE_CODE=200
 secret_dir=/etc/elasticsearch/secret
 max_time=${max_time:-4}
 
-response_code=$(curl -s -X HEAD \
+response_code=$(curl -v -s -X HEAD \
     --cacert $secret_dir/admin-ca \
     --cert $secret_dir/admin-cert \
     --key  $secret_dir/admin-key \
