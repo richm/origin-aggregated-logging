@@ -151,8 +151,9 @@ exit 1
 
 seed_searchguard(){
     info Seeding the searchguard ACL index
-    /usr/share/elasticsearch/plugins/search-guard-2/tools/sgadmin.sh \
+    /usr/share/elasticsearch/plugins/openshift-elasticsearch/sgadmin.sh \
         -cd ${HOME}/sgconfig \
+        -cn ${CLUSTER_NAME} \
         -i .searchguard.${HOSTNAME} \
         -ks /etc/elasticsearch/secret/searchguard.key \
         -kst JKS \
@@ -162,6 +163,8 @@ seed_searchguard(){
         -tspass tspass \
         -nhnv \
         -icl ${DEBUG:+-dg}
+        -sniff true \
+        -icl false
     
     if [ $? -eq 0 ]; then
       info "Seeded the searchguard ACL index"
