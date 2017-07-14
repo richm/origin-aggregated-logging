@@ -139,7 +139,7 @@ fi
 
 # MEMORY_LIMIT per buffer
 MEMORY_LIMIT=`expr $TOTAL_MEMORY_LIMIT / $DIV`
-BUFFER_QUEUE_LIMIT=`expr $MEMORY_LIMIT / $BUFFER_SIZE_LIMIT`
+BUFFER_QUEUE_LIMIT=${BUFFER_QUEUE_LIMIT:-`expr $MEMORY_LIMIT / $BUFFER_SIZE_LIMIT`}
 if [ $BUFFER_QUEUE_LIMIT -eq 0 ]; then
     BUFFER_QUEUE_LIMIT=1024
 fi
@@ -187,6 +187,11 @@ if [ "${ENABLE_DEBUG_AGENT:-}" = true ] ; then
     fi
 else
     rm -f $CFG_DIR/openshift/input-pre-debug.conf
+fi
+
+# add support for instrumentation of elasticsearch output plugin
+if [ "${ES_LOG_STATS:-false}" = true ] ; then
+    cp -f $HOME/out_elasticsearch.rb $HOME/out_elasticsearch_dynamic.rb $HOME/gems/fluent-plugin-elasticsearch-1.9.5/lib/fluent/plugin/
 fi
 
 # bug https://bugzilla.redhat.com/show_bug.cgi?id=1437952

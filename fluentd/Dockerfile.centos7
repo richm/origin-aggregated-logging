@@ -43,6 +43,7 @@ RUN mkdir -p ${HOME} && \
 
 ADD configs.d/ /etc/fluent/configs.d/
 ADD run.sh generate_throttle_configs.rb ${HOME}/
+COPY out_elasticsearch.rb out_elasticsearch_dynamic.rb ${HOME}/
 
 RUN mkdir -p /etc/fluent/configs.d/{dynamic,user} && \
     chmod 777 /etc/fluent/configs.d/dynamic && \
