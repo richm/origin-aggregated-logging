@@ -78,17 +78,6 @@ if [ "${USE_MUX:-}" = "true" ] ; then
         fi
     done
     rm -f $CFG_DIR/dynamic/input-docker-* $CFG_DIR/dynamic/input-syslog-*
-    if [ "${MUX_ALLOW_EXTERNAL:-}" = "true" ] ; then
-        cp $CFG_DIR/mux-post-input*.conf $CFG_DIR/filter-*-mux.conf $CFG_DIR/openshift
-        # copy any user defined files, possibly overwriting the standard ones
-        for file in $CFG_DIR/user/mux-post-input*.conf $CFG_DIR/user/filter-*-mux.conf ; do
-            if [ -f "$file" ] ; then
-                cp -f $file $CFG_DIR/openshift
-            fi
-        done
-    else
-        rm -f $CFG_DIR/openshift/mux-post-input*.conf $CFG_DIR/openshift/filter-*-mux.conf
-    fi
 else
     ruby generate_throttle_configs.rb
     rm -f $CFG_DIR/openshift/*mux*.conf

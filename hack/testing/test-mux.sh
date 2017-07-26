@@ -359,7 +359,7 @@ echo "fluentd forwards kibana and system logs with tag project.testproj.mux with
 #                with k8s.namespace_name: testproj
 #                     k8s.container_name: mux-mux
 #                     k8s.pod_name: mux
-#                     (set in mux-post-input-filter-tag.conf)
+#                     (set in update_current_fluentd)
 #
 update_current_fluentd $NO_CONTAINER_VALS
 
