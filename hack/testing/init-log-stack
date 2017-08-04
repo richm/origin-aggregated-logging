@@ -36,7 +36,6 @@ openshift
 [oo_first_master:vars]
 ansible_become=true
 ansible_connection=local
-containerized=true
 docker_protect_installed_version=true
 openshift_deployment_type=origin
 deployment_type=origin
