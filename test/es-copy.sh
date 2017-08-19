@@ -22,7 +22,7 @@ fi
 saveds=$( mktemp )
 oc get daemonset logging-fluentd -o yaml > $saveds
 
-cmap=`mktemp`
+cmap=$( mktemp )
 oc get configmap/logging-fluentd -o yaml > $cmap
 
 cleanup() {
@@ -33,8 +33,6 @@ cleanup() {
     else
         mycmd=os::log::error
     fi
-    os::log::debug "$( oc replace --force -f $cmap 2>&1 || : )"
-    wait_for_pod_ACTION start fluentd
 
     $mycmd es-copy test finished at $( date )
     # dump the pod before we restart it
@@ -43,6 +41,9 @@ cleanup() {
     fi
     os::log::debug "$( oc label node --all logging-infra-fluentd- 2>&1 || : )"
     os::cmd::try_until_failure "oc get pod $fpod"
+    if [ -n "${cmap:-}" -a -f "${cmap:-}" ] ; then
+        os::log::debug "$( oc replace --force -f $cmap 2>&1 || : )"
+    fi
     if [ -n "${saveds:-}" -a -f "${saveds:-}" ] ; then
         os::log::debug "$( oc replace --force -f $saveds )"
     fi
@@ -54,15 +55,13 @@ cleanup() {
 trap "cleanup" EXIT
 
 check_copy_conf () {
-  expect=$1
-  copy_conf_file=$2
-  fpod=$( get_running_pod fluentd )
-  lsout=$(oc exec $fpod -- ls -l /etc/fluent/configs.d/dynamic/$copy_conf_file 2>&1) || :
-  if [ `expr "$lsout" : ".* No such file"` -gt 0 ]; then
-    existcopy="false"
-    verb="does not exist"
-  else
-    fsize=`echo $lsout | awk '{print $5}'`
+  local expect=$1
+  local copy_conf_file=$2
+  local fpod=$( get_running_pod fluentd )
+  local existcopy=""
+  local lsout=$( oc exec $fpod -- ls -l /etc/fluent/configs.d/dynamic/$copy_conf_file 2>&1 || : )
+  if expr "$lsout" : ".* No such file"; then
+    fsize=$( echo $lsout | awk '{print $5}' )
     if [ $fsize -le 1 ]; then
       existcopy="false"
       verb="does not exist"
@@ -70,13 +69,16 @@ check_copy_conf () {
       existcopy="true"
       verb="exists"
     fi
+  else
+    existcopy="false"
+    verb="does not exist"
   fi
   if [ "$expect" = "$existcopy" ]; then
      result="good"
   else
      result="failed"
   fi
-  echo "$result - $copy_conf_file $verb."
+  os::log::debug "$result - $copy_conf_file $verb."
 }
 
 os::log::info Starting es-copy test at $( date )
@@ -131,7 +133,7 @@ for k_eq_val in $envvars ; do
 done
 newenvvars="$newenvvars ES_COPY=true ES_COPY_SCHEME=https OPS_COPY_SCHEME=https SET_ES_COPY_HOST_ALIAS=true"
 
-modcmap=`mktemp`
+modcmap=$( mktemp )
 sed -n '{
 s/^ *@include configs.d\/openshift\/output-operations.conf/    <match journal.system** system.var.log** **_default_** **_openshift_** **_openshift-infra_** mux.ops>\
      @type copy\
