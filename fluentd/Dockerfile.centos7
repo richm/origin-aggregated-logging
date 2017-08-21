@@ -46,6 +46,11 @@ RUN cd ${HOME} && \
     gem install -N --conservative --minimal-deps --no-ri \
       --local fluent-plugin-elasticsearch-1.9.5.gem
 
+COPY fluent-plugin-elasticsearch-1.9.5.gem ${HOME}/
+RUN cd ${HOME} && \
+    gem install -N --conservative --minimal-deps --no-ri \
+      --local fluent-plugin-elasticsearch-1.9.5.gem
+
 ADD configs.d/ /etc/fluent/configs.d/
 ADD run.sh generate_throttle_configs.rb ${HOME}/
 
