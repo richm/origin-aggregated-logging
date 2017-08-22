@@ -38,7 +38,8 @@ RUN mkdir -p ${HOME} && \
       fluent-plugin-secure-forward \
      'fluent-plugin-systemd:<0.1.0' \
       fluent-plugin-viaq_data_model \
-      systemd-journal
+      systemd-journal \
+     excon faraday
 
 COPY fluent-plugin-elasticsearch-1.9.5.gem ${HOME}/
 RUN cd ${HOME} && \
