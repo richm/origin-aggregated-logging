@@ -386,7 +386,33 @@ create_test_log_files() {
 
 }
 
+monitor_fluentd_pos() {
+    while true ; do
+        if sudo test -s /var/log/journal.pos ; then
+            local startts=$( date +%s )
+            local count=$( sudo journalctl -c $( sudo cat /var/log/journal.pos ) | wc -l )
+            local endts=$( date +%s )
+            echo $endts $( expr $endts - $startts ) $count
+        else
+            echo $( date --rfc-3339=ns ) no /var/log/journal.pos
+        fi
+        sleep 1
+    done > $ARTIFACT_DIR/monitor_fluentd_pos.log
+}
+
+monitor_journal_lograte() {
+    local interval=60
+    while true ; do
+        count=$( sudo journalctl -S "$( date +'%Y-%m-%d %H:%M:%S' --date="$interval seconds ago" )" | wc -l )
+        echo $( date +%s ) $count
+        sleep $interval
+    done  > $ARTIFACT_DIR/monitor_journal_lograte.log
+}
+
 monitor_pids=""
+monitor_fluentd_pos & monitor_pids="$monitor_pids $!"
+monitor_journal_lograte & monitor_pids="$monitor_pids $!"
+
 run_top_on_pod() {
     stdbuf -o 0 oc exec $1 -- top -b -d 1 > $ARTIFACT_DIR/$1.top.raw & monitor_pids="$monitor_pids $!"
 }
