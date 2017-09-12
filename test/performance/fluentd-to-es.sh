@@ -386,32 +386,7 @@ create_test_log_files() {
 
 }
 
-monitor_fluentd_pos() {
-    while true ; do
-        if sudo test -s /var/log/journal.pos ; then
-            local startts=$( date +%s )
-            local count=$( sudo journalctl -c $( sudo cat /var/log/journal.pos ) | wc -l )
-            local endts=$( date +%s )
-            echo $endts $( expr $endts - $startts ) $count
-        else
-            echo $( date --rfc-3339=ns ) no /var/log/journal.pos
-        fi
-        sleep 1
-    done > $ARTIFACT_DIR/monitor_fluentd_pos.log
-}
-
-monitor_journal_lograte() {
-    local interval=60
-    while true ; do
-        count=$( sudo journalctl -S "$( date +'%Y-%m-%d %H:%M:%S' --date="$interval seconds ago" )" | wc -l )
-        echo $( date +%s ) $count
-        sleep $interval
-    done  > $ARTIFACT_DIR/monitor_journal_lograte.log
-}
-
 monitor_pids=""
-monitor_fluentd_pos & monitor_pids="$monitor_pids $!"
-monitor_journal_lograte & monitor_pids="$monitor_pids $!"
 
 run_top_on_pod() {
     stdbuf -o 0 oc exec $1 -- top -b -d 1 > $ARTIFACT_DIR/$1.top.raw & monitor_pids="$monitor_pids $!"
@@ -424,12 +399,30 @@ get_secure_forward_plugin_id() {
 
 get_es_plugin_id() {
     oc exec $1 -- curl -s http://localhost:24220/api/plugins.json | \
-        python -c 'import sys,json; print [xx["plugin_id"] for xx in json.load(sys.stdin)["plugins"] if xx["config"].get("host") == "logging-es"][0]'
+        python -c 'import sys,json
+hsh = json.load(sys.stdin)["plugins"]
+matches = [xx["plugin_id"] for xx in hsh if -1 < xx["config"].get("buffer_path", "").find("output-es-config")]
+if not matches:
+   matches = [xx["plugin_id"] for xx in hsh if xx["config"].get("host") == "logging-es"]
+if matches:
+  print matches[0]
+else:
+  print "Error: es_plugin_id not found"
+'
 }
 
 get_es_ops_plugin_id() {
     oc exec $1 -- curl -s http://localhost:24220/api/plugins.json | \
-        python -c 'import sys,json; print [xx["plugin_id"] for xx in json.load(sys.stdin)["plugins"] if xx["config"].get("host") == "logging-es-ops"][0]'
+        python -c 'import sys,json
+hsh = json.load(sys.stdin)["plugins"]
+matches = [xx["plugin_id"] for xx in hsh if -1 < xx["config"].get("buffer_path", "").find("output-es-ops-config")]
+if not matches:
+   matches = [xx["plugin_id"] for xx in hsh if xx["config"].get("host") == "logging-es-ops"]
+if matches:
+  print matches[0]
+else:
+  print "Error: es_ops_plugin_id not found"
+'
 }
 
 # if using mux, grab the secure_forward output plugin from fluentd, and grab
@@ -596,6 +589,7 @@ get_all_fluentd_monitor_stats & monitor_pids="$monitor_pids $!"
 
 os::log::info Running tests . . . ARTIFACT_DIR $ARTIFACT_DIR
 # measure how long it takes - wait until last record is in ES or we time out
-os::cmd::try_until_text "curl_es $esopspod /.operations.*/_search?q=systemd.u.SYSLOG_IDENTIFIER:$prefix\&size=0 | python -mjson.tool" ".total.: ${NMESSAGES}\$" $(( second * max_wait_time )) 1
+qs='{"query":{"term":{"systemd.u.SYSLOG_IDENTIFIER":"'"${prefix}"'"}}}'
+os::cmd::try_until_text "curl_es ${esopspod} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
 endts=$( date +%s )
 os::log::info Test run took $( expr $endts - $startts ) seconds
