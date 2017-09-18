@@ -441,7 +441,7 @@ contprefix="this-is-container-"
 PROJ_FMT="${projprefix}%0${NPSIZE}.f"
 
 # number of messages per project
-NMESSAGES=${NMESSAGES:-500000}
+NMESSAGES=${NMESSAGES:-50000}
 # max number of digits in $NMESSAGES
 NSIZE=$( printf $NMESSAGES | wc -c )
 # printf format for message number
@@ -493,12 +493,12 @@ fi
 os::log::info create_test_log_files . . .
 create_test_log_files
 
-espod=`get_running_pod es`
-esopspod=`get_running_pod es-ops`
+espod=$( get_running_pod es )
+esopspod=$( get_running_pod es-ops )
 esopspod=${esopspod:-$espod}
 
-fpod=`get_running_pod fluentd`
-muxpod=`get_running_pod mux`
+fpod=$( get_running_pod fluentd )
+muxpod=$( get_running_pod mux )
 # use monitor agent in mux
 if [ -n "$muxpod" ] ; then
     os::log::info Configure mux to enable monitor agent
@@ -525,9 +525,9 @@ max_wait_time=$( expr \( $NMESSAGES \* \( $NPROJECTS + 1 \) \) / 150 )
 
 startts=$( date +%s )
 # get running pods to monitor
-fpod=`get_running_pod fluentd`
+fpod=$( get_running_pod fluentd )
 run_top_on_pod $fpod
-muxpod=`get_running_pod mux`
+muxpod=$( get_running_pod mux )
 if [ -n "${muxpod:-}" ] ; then
     run_top_on_pod $muxpod
 fi
@@ -538,5 +538,8 @@ os::log::info Running tests . . . ARTIFACT_DIR $ARTIFACT_DIR
 # measure how long it takes - wait until last record is in ES or we time out
 qs='{"query":{"term":{"systemd.u.SYSLOG_IDENTIFIER":"'"${prefix}"'"}}}'
 os::cmd::try_until_text "curl_es ${esopspod} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
+for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
+    os::cmd::try_until_text "curl_es ${espod} /project.${proj}.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
+done
 endts=$( date +%s )
 os::log::info Test run took $( expr $endts - $startts ) seconds
