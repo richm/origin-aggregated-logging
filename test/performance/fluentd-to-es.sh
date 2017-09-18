@@ -185,90 +185,9 @@ EOF
     fi
 }
 
-get_journal_timestamp() {
-    # microseconds since epoch
-    date -u +%s%6N
-}
-
-# journal -o export format for use with
-# /usr/lib/systemd/systemd-journal-remote - -o /path/to/log.journal
-# __CURSOR=s=f689c3b9b8dc4465acd22433bde89aed;i=71f60;b=0937011437e44850b3cb5a615345b50f;m=d3bafda0f;t=5330b9fab5ca6;x=244e23370340b59b
-# _SOURCE_REALTIME_TIMESTAMP=1431439843797660
-# __REALTIME_TIMESTAMP=1463499900017830
-# __MONOTONIC_TIMESTAMP=56835955215
-# _BOOT_ID=0937011437e44850b3cb5a615345b50f
-# _UID=1000
-# _GID=1000
-# _CAP_EFFECTIVE=0
-# _SYSTEMD_OWNER_UID=1000
-# _SYSTEMD_SLICE=user-1000.slice
-# _MACHINE_ID=68fe516b647f4d0fb5b0439d57b79344
-# _HOSTNAME=localhost.localdomain
-# _TRANSPORT=stdout
-# PRIORITY=4
-# _AUDIT_SESSION=1
-# _AUDIT_LOGINUID=1000
-# _SYSTEMD_CGROUP=/user.slice/user-1000.slice/session-1.scope
-# _SYSTEMD_SESSION=1
-# _SYSTEMD_UNIT=session-1.scope
-# _SELINUX_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
-# SYSLOG_FACILITY=3
-# CODE_FILE=../src/core/manager.c
-# CODE_LINE=1761
-# CODE_FUNCTION=process_event
-# SYSLOG_IDENTIFIER=firefox.desktop
-# _COMM=firefox
-# _EXE=/usr/lib64/firefox/firefox
-# _CMDLINE=/usr/lib64/firefox/firefox -new-instance -P default
-# MESSAGE=Failed to open VDPAU backend libvdpau_va_gl.so: cannot open shared object file: No such file or directory
-# _PID=2685
-format_journal_message() {
-    # $1 - full or short
-    # $2 - $NFMT
-    # $3 - $EXTRAFMT
-    # $4 - $prefix
-    # $5 - $ii
-    # $6 - CONTAINER_NAME
-    # $7 - CONTAINER_ID
-    # $8 - CONTAINER_ID_FULL
-    fac=1
-    sev=2
-    msg=`printf "%s-$2 $3" $4 $5 1`
-    if [ "$1" = "full" ] ; then
-        ts=`get_journal_timestamp`
-        hn=`hostname -s`
-        cat <<EOF
-_SOURCE_REALTIME_TIMESTAMP=$ts
-__REALTIME_TIMESTAMP=$ts
-_BOOT_ID=0937011437e44850b3cb5a615345b50f
-_UID=1000
-_GID=1000
-_HOSTNAME=$hn
-SYSLOG_IDENTIFIER=$4
-SYSLOG_FACILITY=$fac
-_COMM=$4
-_PID=$$
-MESSAGE=$msg
-_TRANSPORT=stderr
-PRIORITY=3
-UNKNOWN1=1
-UNKNOWN2=2
-EOF
-        if [ -n "${6:-}" ] ; then
-            cat <<EOF
-CONTAINER_NAME=$6
-CONTAINER_ID=$7
-CONTAINER_ID_FULL=$8
-EOF
-        fi
-        echo ""
-    else
-        echo "$msg"
-    fi
-}
-
 # create a journal which has N records - output is journalctl -o export format
 # suitable for piping into systemd-journal-remote
+# if nproj is given, also create N records per project
 format_journal() {
     local nrecs=$1
     local prefix=$2
@@ -284,6 +203,20 @@ hn = sys.argv[4]
 tsstr = sys.argv[5]
 ts = int(tsstr)
 pid = sys.argv[6]
+if len(sys.argv) > 7:
+  nproj = int(sys.argv[7])
+  projwidth = len(sys.argv[7])
+  contprefix = sys.argv[8]
+  podprefix = sys.argv[9]
+  projprefix = sys.argv[10]
+  poduuid = sys.argv[11]
+  contfields = """CONTAINER_NAME=k8s_{contprefix}{{jj:0{projwidth}d}}.deadbeef_{podprefix}{{jj:0{projwidth}d}}_{projprefix}{{jj:0{projwidth}d}}_{poduuid}_abcdef01
+CONTAINER_ID={xx}
+CONTAINER_ID_FULL={yy}
+""".format(contprefix=contprefix,projwidth=projwidth,podprefix=podprefix,projprefix=projprefix,poduuid=poduuid,xx="1"*12,yy="1"*64)
+else:
+  nproj = 0
+  contfields = ""
 
 template = """_SOURCE_REALTIME_TIMESTAMP={{ts}}
 __REALTIME_TIMESTAMP={{ts}}
@@ -299,16 +232,21 @@ _TRANSPORT=stderr
 PRIORITY=3
 UNKNOWN1=1
 UNKNOWN2=2
-""".format(prefix=prefix, hn=hn, width=width, pid=pid)
+""".format(prefix=prefix, hn=hn, width=width, pid=pid,contfields=contfields)
 
 padlen = msgsize - (len(template) + 2*len(tsstr) + len(prefix) + width + 1 + 1)
 template = template + """MESSAGE={prefix}-{{ii:0{width}d}} {msg:0{padlen}d}
 """.format(prefix=prefix, width=width, padlen=padlen, msg=0)
 
+conttemplate = template + contfields
+
 for ii in xrange(1, nrecs + 1):
   sys.stdout.write(template.format(ts=ts, ii=ii) + "\n")
   ts = ts + 1
-' $nrecs $prefix $msgsize $hn $startts $$
+  for jj in xrange(1, nproj + 1):
+    sys.stdout.write(conttemplate.format(ts=ts, ii=ii, jj=jj) + "\n")
+    ts = ts + 1
+' $nrecs $prefix $msgsize $hn $startts $$ ${NPROJECTS:-0} ${contprefix:-""} ${podprefix:-""} ${projprefix:-""} $( uuidgen )
 }
 
 format_json_filename() {
@@ -363,27 +301,22 @@ create_test_log_files() {
 
     $formatter $NMESSAGES $prefix $MSGSIZE | sysfilter
     postprocesssystemlog
-    if [ $NPROJECTS -gt 0 ] ; then
-        while [ $ii -le $NMESSAGES ] ; do
-            jj=1
-            while [ $jj -le $NPROJECTS ] ; do
-                if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-                    fn=`format_json_filename $jj`
-                    format_json_message full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $datadir/docker/$fn
-                    format_json_message short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $orig
-                else
-                    CONTAINER_NAME=`get_journal_container_name $jj`
-                    CONTAINER_ID_FULL=`echo $jj | sha256sum | awk '{print $1}'`
-                    CONTAINER_ID=`echo $jj | sha256sum | awk '{print substr($1, 1, 12)}'`
-                    $formatter full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" $CONTAINER_NAME $CONTAINER_ID_FULL $CONTAINER_ID | sysfilter
-                    $formatter short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" $CONTAINER_NAME $CONTAINER_ID_FULL $CONTAINER_ID >> $orig
-                fi
-                jj=`expr $jj + 1`
+    if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
+        if [ $NPROJECTS -gt 0 ] ; then
+            while [ $ii -le $NMESSAGES ] ; do
+                jj=1
+                while [ $jj -le $NPROJECTS ] ; do
+                    if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
+                        fn=$( format_json_filename $jj )
+                        format_json_message full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $datadir/docker/$fn
+                        format_json_message short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $orig
+                    fi
+                    jj=`expr $jj + 1`
+                done
+                ii=`expr $ii + 1`
             done
-            ii=`expr $ii + 1`
-        done
+        fi
     fi
-
 }
 
 monitor_pids=""
