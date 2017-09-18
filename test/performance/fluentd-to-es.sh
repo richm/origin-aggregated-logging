@@ -328,9 +328,9 @@ get_journal_container_name() {
 
 create_test_log_files() {
     ii=1
-    prefix=`uuidgen`
+    prefix=$( uuidgen )
     # need $MSGSIZE - (36 + "-" + $NSIZE + " ") bytes
-    n=`expr $MSGSIZE - 36 - 1 - $NSIZE - 1`
+    n=$( expr $MSGSIZE - 36 - 1 - $NSIZE - 1 )
     EXTRAFMT=${EXTRAFMT:-"%0${n}d"}
     if [ "${USE_JOURNAL:-true}" = "true" ] ; then
         formatter=format_journal
@@ -501,13 +501,14 @@ fi
 NPROJECTS=${NPROJECTS:-0}
 NPSIZE=$( printf $NPROJECTS | wc -c )
 NPFMT=${NPFMT:-"%0${NPSIZE}d"}
-
 podprefix="this-is-pod-"
 projprefix="this-is-project-"
 contprefix="this-is-container-"
+# for the seq -f argument
+PROJ_FMT="${projprefix}%0${NPSIZE}.f"
 
 # number of messages per project
-NMESSAGES=${NMESSAGES:-50000}
+NMESSAGES=${NMESSAGES:-500000}
 # max number of digits in $NMESSAGES
 NSIZE=$( printf $NMESSAGES | wc -c )
 # printf format for message number
@@ -536,6 +537,11 @@ cleanup() {
     os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
     os::log::debug "$( oc set env daemonset/logging-fluentd JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
     os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
+    if [ ${NPROJECTS:-0} -gt 0 ] ; then
+        for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
+            os::log::debug "$( oc delete project $proj )"
+        done
+    fi
     # this will call declare_test_end, suite_end, etc.
     os::test::junit::reconcile_output
     exit $result_code
@@ -543,6 +549,14 @@ cleanup() {
 trap "cleanup" INT TERM EXIT
 
 os::log::info Begin fluentd to elasticsearch performance test at $( date )
+
+if [ ${NPROJECTS:-0} -gt 0 ] ; then
+    os::log::info Creating $NPROJECTS projects/namespaces
+    for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
+        os::log::debug "$( oadm new-project $proj --node-selector='' )"
+    done
+fi
+
 os::log::info create_test_log_files . . .
 create_test_log_files
 
