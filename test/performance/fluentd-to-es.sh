@@ -101,7 +101,7 @@ set ylabel "$YLABEL (logarithmic)"
 replot
 unset multiplot
 EOF
-    gnuplot $ARTIFACT_DIR/graph.gp > $ARTIFACT_DIR/gnuplot.log 2>&1
+    gnuplot $ARTIFACT_DIR/graph.gp
 }
 
 # convert something that looks like this:
@@ -141,6 +141,9 @@ process_stats() {
     local file
     local comp
     local pref
+    if [ -f $ARTIFACT_DIR/run_info ] ; then
+        . $ARTIFACT_DIR/run_info
+    fi
     for file in $ARTIFACT_DIR/logging-* ; do
         case $file in
             */logging-fluentd-*) comp=fluentd ;;
@@ -157,6 +160,7 @@ process_stats() {
             *-es.stats) pref=${comp}-es ;;
             *-es-ops.stats) pref=${comp}-es-ops ;;
             *-forward.stats) pref=${comp}-forward ;;
+            *) continue ;;
         esac
         file_col_field_buf_virt_res="$file_col_field_buf_virt_res $file 4 ${pref}-BUF-SZ"
         file_col_field_mem_cpu_other="$file_col_field_mem_cpu_other $file 2 ${pref}-DUR $file 3 ${pref}-Q-LEN $file 5 ${pref}-RETRIES"
@@ -166,8 +170,8 @@ process_stats() {
 Test Duration $duration seconds Start $startts End $endts
 Number of records: $NMESSAGES    Message size: $MSGSIZE
 EOF
-    TITLE="Fluentd/Mux Memory Sizes in bytes" YLABEL="bytes at time" doplot $ARTIFACT_DIR/memory-sizes.png $ARTIFACT_DIR/extra.dat $file_col_field_buf_virt_res
-    TITLE="Fluentd/Mux CPU%, MEM%, etc." YLABEL="value at time" doplot $ARTIFACT_DIR/cpu-mem-other.png $ARTIFACT_DIR/extra.dat $file_col_field_mem_cpu_other
+    TITLE="Fluentd/Mux Memory Sizes in bytes" YLABEL="bytes at time" doplot $ARTIFACT_DIR/memory-sizes.png $ARTIFACT_DIR/extra.dat $file_col_field_buf_virt_res > $ARTIFACT_DIR/gnuplot.out.1 2>&1
+    TITLE="Fluentd/Mux CPU%, MEM%, etc." YLABEL="value at time" doplot $ARTIFACT_DIR/cpu-mem-other.png $ARTIFACT_DIR/extra.dat $file_col_field_mem_cpu_other > $ARTIFACT_DIR/gnuplot.out.2 2>&1
     if [ -n "${muxlog:-}" ] ; then
         awk '/sent message.*logging-es:9200/ {print $12, $14, $16, $18}' $muxlog > $ARTIFACT_DIR/mux-es.stats
         awk '/sent message.*logging-es-ops:9200/ {print $12, $14, $16, $18}' $muxlog > $ARTIFACT_DIR/mux-es-ops.stats
@@ -179,10 +183,15 @@ EOF
             mux_stats="$mux_stats $ARTIFACT_DIR/mux-es-ops.stats 2 ES-OPS-DUR $ARTIFACT_DIR/mux-es-ops.stats 3 ES-OPS-BYTES $ARTIFACT_DIR/mux-es.stats 4 ES-OPS-NRECS"
         fi
         if [ -n "$mux_stats" ] ; then
-            TITLE="Mux Bulk Stats" YLABEL="value at time" doplot $ARTIFACT_DIR/mux-stats.png $ARTIFACT_DIR/extra.dat $mux_stats
+            TITLE="Mux Bulk Stats" YLABEL="value at time" doplot $ARTIFACT_DIR/mux-stats.png $ARTIFACT_DIR/extra.dat $mux_stats > $ARTIFACT_DIR/gnuplot.out.2 2>&1
         fi
     fi
 }
+
+if [ "${1:-}" = process_stats ] ; then
+    process_stats
+    exit 0
+fi
 
 # create a journal which has N records - output is journalctl -o export format
 # suitable for piping into systemd-journal-remote
@@ -453,6 +462,7 @@ cleanup() {
     if [ -n "${muxpod}" ] ; then
         oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
     fi
+    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
     process_stats
     if [ -n "$workdir" -a -d "$workdir" ] ; then
         rm -rf $workdir
