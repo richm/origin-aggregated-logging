@@ -406,16 +406,6 @@ get_all_fluentd_monitor_stats() {
 # set to true if running this test on an OS whose journal format
 # is not compatible with el7 (e.g. fedora)
 USE_CONTAINER_FOR_JOURNAL_FORMAT=false
-if [ "${USE_JOURNAL:-true}" = "true" ] ; then
-    if [ "${USE_CONTAINER_FOR_JOURNAL_FORMAT:-}" != true ] ; then
-        test -x /usr/lib/systemd/systemd-journal-remote || \
-            sudo yum -y install /usr/lib/systemd/systemd-journal-remote 2>&1 | yum_output || \
-            sudo dnf -y install /usr/lib/systemd/systemd-journal-remote 2>&1 | yum_output || {
-                os::log::error please install the package containing /usr/lib/systemd/systemd-journal-remote
-                exit 1
-            }
-    fi
-fi
 
 # need a temp dir for log files
 workdir=`mktemp -p /var/tmp -d`
@@ -482,6 +472,18 @@ cleanup() {
 trap "cleanup" INT TERM EXIT
 
 os::log::info Begin fluentd to elasticsearch performance test at $( date )
+
+if [ "${USE_JOURNAL:-true}" = "true" ] ; then
+    if [ "${USE_CONTAINER_FOR_JOURNAL_FORMAT:-}" != true ] ; then
+        os::log::info installing /usr/lib/systemd/systemd-journal-remote
+        test -x /usr/lib/systemd/systemd-journal-remote || \
+            sudo yum -y install /usr/lib/systemd/systemd-journal-remote 2>&1 | yum_output || \
+            sudo dnf -y install /usr/lib/systemd/systemd-journal-remote 2>&1 | yum_output || {
+                os::log::error please install the package containing /usr/lib/systemd/systemd-journal-remote
+                exit 1
+            }
+    fi
+fi
 
 if [ ${NPROJECTS:-0} -gt 0 ] ; then
     os::log::info Creating $NPROJECTS projects/namespaces
