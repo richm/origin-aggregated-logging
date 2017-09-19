@@ -10,7 +10,6 @@ os::util::environment::use_sudo
 os::test::junit::declare_suite_start "test/perf-fluent-to-es"
 
 if [ -n "${DEBUG:-}" ] ; then
-    set -x
     curl_output() {
         python -mjson.tool
     }
@@ -372,34 +371,40 @@ setup_fluentd_monitors() {
         es_ops_plugin_id=$( get_es_ops_plugin_id $muxpod )
         os::cmd::try_until_success "get_es_plugin_id $muxpod"
         es_plugin_id=$( get_es_plugin_id $muxpod )
-        fluentd_monitors="$fpod $secure_forward_plugin_id forward $muxpod $es_ops_plugin_id es-ops $muxpod $es_plugin_id es"
+        fluentd_monitors="$fpod $secure_forward_plugin_id get_fluentd_monitor_sf_stats forward $muxpod $es_ops_plugin_id get_fluentd_monitor_es_stats es-ops $muxpod $es_plugin_id get_fluentd_monitor_es_stats es"
     else
         os::cmd::try_until_success "get_es_ops_plugin_id $fpod"
         es_ops_plugin_id=$( get_es_ops_plugin_id $fpod )
         os::cmd::try_until_success "get_es_plugin_id $fpod"
         es_plugin_id=$( get_es_plugin_id $fpod )
-        fluentd_monitors="$fpod $es_ops_plugin_id es-ops $fpod $es_plugin_id es"
+        fluentd_monitors="$fpod $es_ops_plugin_id get_fluentd_monitor_es_stats es-ops $fpod $es_plugin_id get_fluentd_monitor_es_stats es"
     fi
 }
 
 # why get starts and endts?  because when fluentd is heavily loaded the
 # monitor endpoint may not respond for several seconds - so we need to
 # capture this information too
-get_fluentd_monitor_stats() {
+get_fluentd_monitor_sf_stats() {
     oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2 | \
         python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"])' $( date -u +%s )
 }
 
+get_fluentd_monitor_es_stats() {
+    oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2\&debug=true | \
+        python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count} {next_flush_time} {last_retry_time} {next_retry_time} {emit_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"], next_flush_time=hsh["instance_variables"]["next_flush_time"], last_retry_time=hsh["instance_variables"]["last_retry_time"], next_retry_time=hsh["instance_variables"]["next_retry_time"], emit_count=hsh["instance_variables"]["emit_count"])' $( date -u +%s )
+}
+
 get_all_fluentd_monitor_stats() {
-    while true ; do
-        set -- $fluentd_monitors
-        while [ -n "${1:-}" ] ; do
-            local pod=$1; shift
-            local id=$1; shift
-            local name=$1; shift
-            get_fluentd_monitor_stats $pod $id >> $ARTIFACT_DIR/$pod.fluentd-$name.stats
-        done
-        sleep 1
+    set -- $fluentd_monitors
+    while [ -n "${1:-}" ] ; do
+        local pod=$1; shift
+        local id=$1; shift
+        local func=$1; shift
+        local name=$1; shift
+        while true ; do
+            $func $pod $id
+            sleep 1
+        done > $ARTIFACT_DIR/$pod.fluentd-$name.stats 2>&1 & monitor_pids="$monitor_pids $!"
     done
 }
 
@@ -421,7 +426,7 @@ else
     systemlog=$datadir/messages
 fi
 # number of projects, number size, printf format
-NPROJECTS=${NPROJECTS:-0}
+NPROJECTS=${NPROJECTS:-1}
 NPSIZE=$( printf $NPROJECTS | wc -c )
 NPFMT=${NPFMT:-"%0${NPSIZE}d"}
 podprefix="this-is-pod-"
@@ -534,7 +539,7 @@ if [ -n "${muxpod:-}" ] ; then
     run_top_on_pod $muxpod
 fi
 setup_fluentd_monitors
-get_all_fluentd_monitor_stats & monitor_pids="$monitor_pids $!"
+get_all_fluentd_monitor_stats
 
 os::log::info Running tests . . . ARTIFACT_DIR $ARTIFACT_DIR
 # measure how long it takes - wait until last record is in ES or we time out
