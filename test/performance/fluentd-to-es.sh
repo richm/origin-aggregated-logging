@@ -65,7 +65,7 @@ f(x) = '$fieldvar'_mean
 fit f(x) "'$gpoutf'" u 1:'$col' via '$fieldvar'_mean
 if (exists("FIT_WSSR")&&exists("FIT_NDF")) '$fieldvar'_dev = sqrt(FIT_WSSR / (FIT_NDF + 1 ))
 if (!exists("FIT_WSSR")||!exists("FIT_NDF")) '$fieldvar'_dev = 0.0
-labelstr = labelstr . sprintf("%s: mean=%g min=%g max=%g stddev=%g\n", "'"$field"'", '$fieldvar'_mean, '$fieldvar'_min, '$fieldvar'_max, '$fieldvar'_dev)'
+labelstr = labelstr . sprintf("%30s: mean=%.2g min=%.2g max=%.2g stddev=%.2g\n", "'"$field"'", '$fieldvar'_mean, '$fieldvar'_min, '$fieldvar'_max, '$fieldvar'_dev)'
         ii=`expr $ii + 1`
     done
 
@@ -79,7 +79,7 @@ $statstr
 $gnuplotheader
 ${AUTOTITLE:-}
 set datafile separator "$DELIM"
-set label 1 labelstr at screen 0.4,0.99
+set label 1 labelstr at screen 0.2,0.99
 set label 2 extradat at screen 0.01,0.99
 set key at screen 1.0,1.0
 set output "$graphout"
@@ -136,8 +136,9 @@ cnvt_top_fluentd_output() {
 }
 
 process_stats() {
-    local file_col_field_mem_cpu_other=""
-    local file_col_field_buf_virt_res=""
+    local file_col_field_mem_cpu_queue=""
+    local file_col_field_rss_buf_emit=""
+    local file_col_field_etc=""
     local file
     local comp
     local pref
@@ -153,8 +154,9 @@ process_stats() {
         case $file in
             *.top.raw) datfile=$ARTIFACT_DIR/$comp.top.dat
                        cat $file | cnvt_top_fluentd_output $startts $endts > $datfile
-                       file_col_field_mem_cpu_other="$file_col_field_mem_cpu_other $datfile 2 ${comp}-CPU% $datfile 3 ${comp}-MEM%"
-                        file_col_field_buf_virt_res="$file_col_field_buf_virt_res $datfile 4 ${comp}-VIRT $datfile 5 ${comp}-RES"
+                       file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $datfile 2 ${comp}-CPU% $datfile 3 ${comp}-MEM%"
+                       file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $datfile 5 ${comp}-RES"
+                       file_col_field_etc="$file_col_field_etc $datfile 4 ${comp}-VIRT"
                       continue ;;
             *logging-mux-*.log) muxlog=$file ; continue ;;
             *-es.stats) pref=${comp}-es ;;
@@ -162,16 +164,25 @@ process_stats() {
             *-forward.stats) pref=${comp}-forward ;;
             *) continue ;;
         esac
-        file_col_field_buf_virt_res="$file_col_field_buf_virt_res $file 4 ${pref}-BUF-SZ"
-        file_col_field_mem_cpu_other="$file_col_field_mem_cpu_other $file 2 ${pref}-DUR $file 3 ${pref}-Q-LEN $file 5 ${pref}-RETRIES"
+        file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 4 ${pref}-BUF-SZ"
+        if [ "$pref" = "mux-es" -o "$pref" = "mux-es-ops" ] ; then
+            file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 9 ${pref}-EMIT"
+        fi
+        file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file 3 ${pref}-Q-LEN"
+        file_col_field_etc="$file 2 ${pref}-DUR $file 5 ${pref}-RETRIES"
     done
     local duration=$(( endts - startts ))
     cat <<EOF > $ARTIFACT_DIR/extra.dat
-Test Duration $duration seconds Start $startts End $endts
-Number of records: $NMESSAGES    Message size: $MSGSIZE
+Test Duration      : $duration seconds
+Start              : $startts
+End                : $endts
+Number of records  : $NMESSAGES
+Number of projects : $NPROJECTS
+Message size       : $MSGSIZE bytes
 EOF
-    TITLE="Fluentd/Mux Memory Sizes in bytes" YLABEL="bytes at time" doplot $ARTIFACT_DIR/memory-sizes.png $ARTIFACT_DIR/extra.dat $file_col_field_buf_virt_res > $ARTIFACT_DIR/gnuplot.out.1 2>&1
-    TITLE="Fluentd/Mux CPU%, MEM%, etc." YLABEL="value at time" doplot $ARTIFACT_DIR/cpu-mem-other.png $ARTIFACT_DIR/extra.dat $file_col_field_mem_cpu_other > $ARTIFACT_DIR/gnuplot.out.2 2>&1
+    TITLE="Fluentd/Mux RSS, Total Buffer Size, Emit Count" YLABEL="bytes/count at time" doplot $ARTIFACT_DIR/rss-buffer-emit.png $ARTIFACT_DIR/extra.dat $file_col_field_rss_buf_emit > $ARTIFACT_DIR/gnuplot.out.1 2>&1
+    TITLE="Fluentd/Mux CPU%, MEM%, Queue length" YLABEL="value at time" doplot $ARTIFACT_DIR/cpu-mem-queue.png $ARTIFACT_DIR/extra.dat $file_col_field_mem_cpu_queue > $ARTIFACT_DIR/gnuplot.out.2 2>&1
+    TITLE="Fluentd/Mux other stats" YLABEL="value at time" doplot $ARTIFACT_DIR/other-etc.png $ARTIFACT_DIR/extra.dat $file_col_field_etc > $ARTIFACT_DIR/gnuplot.out.3 2>&1
     if [ -n "${muxlog:-}" ] ; then
         awk '/sent message.*logging-es:9200/ {print $12, $14, $16, $18}' $muxlog > $ARTIFACT_DIR/mux-es.stats
         awk '/sent message.*logging-es-ops:9200/ {print $12, $14, $16, $18}' $muxlog > $ARTIFACT_DIR/mux-es-ops.stats
