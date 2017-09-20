@@ -410,8 +410,13 @@ get_fluentd_monitor_sf_stats() {
 }
 
 get_fluentd_monitor_es_stats() {
-    oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2\&debug=true | \
-        python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count} {next_flush_time} {last_retry_time} {next_retry_time} {emit_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"], next_flush_time=hsh["instance_variables"]["next_flush_time"], last_retry_time=hsh["instance_variables"]["last_retry_time"], next_retry_time=hsh["instance_variables"]["next_retry_time"], emit_count=hsh["instance_variables"]["emit_count"])' $( date -u +%s )
+    if [ $USE_DEBUG_ES_ENDPOINT = true ] ; then
+        oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2\&debug=true | \
+            python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count} {next_flush_time} {last_retry_time} {next_retry_time} {emit_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"], next_flush_time=hsh["instance_variables"]["next_flush_time"], last_retry_time=hsh["instance_variables"]["last_retry_time"], next_retry_time=hsh["instance_variables"]["next_retry_time"], emit_count=hsh["instance_variables"]["emit_count"])' $( date -u +%s )
+    else
+        oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2 | \
+            python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count} {next_flush_time} {last_retry_time} {next_retry_time} {emit_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"], next_flush_time=0, last_retry_time=0, next_retry_time=0, emit_count=0)' $( date -u +%s )
+    fi
 }
 
 get_all_fluentd_monitor_stats() {
@@ -427,6 +432,63 @@ get_all_fluentd_monitor_stats() {
         done > $ARTIFACT_DIR/$pod.fluentd-$name.stats 2>&1 & monitor_pids="$monitor_pids $!"
     done
 }
+
+get_all_es_monitor_stats() {
+    while true ; do
+        date +%s
+        oc exec $espod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
+           --key /etc/elasticsearch/secret/admin-key \
+           https://localhost:9200/_cat/thread_pool?v\&h=host,bc,ba,bq,bs,br
+        sleep 1
+    done > $ARTIFACT_DIR/$espod.stats 2>&1 & monitor_pids="$monitor_pids $!"
+    if [ $espod != $esopspod ] ; then
+        while true ; do
+            date +%s
+            oc exec $esopspod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
+               --key /etc/elasticsearch/secret/admin-key \
+               https://localhost:9200/_cat/thread_pool?v\&h=host,bc,ba,bq,bs,br
+            sleep 1
+        done > $ARTIFACT_DIR/$esopspod.stats 2>&1 & monitor_pids="$monitor_pids $!"
+    fi
+}
+
+cleanup() {
+    local result_code=$?
+    set +e
+    endts=${endts:-$( date +%s )}
+    kill $monitor_pids
+    oc logs $fpod > $ARTIFACT_DIR/$fpod.log
+    if [ -n "${muxpod}" ] ; then
+        if [ $USE_MUX_DEBUG = false ] ; then
+            oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
+        else
+            oc exec $muxpod -- cat /var/log/fluentd.log > $ARTIFACT_DIR/$muxpod.log
+        fi
+        os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT- DEBUG- )"
+    fi
+    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
+    process_stats
+    if [ -n "$workdir" -a -d "$workdir" ] ; then
+        rm -rf $workdir
+    fi
+    os::log::debug "$( oc label node --all logging-infra-fluentd- )"
+    os::cmd::try_until_failure "oc get pod $fpod"
+    if [ -f /var/log/journal.pos.save ] ; then
+        mv /var/log/journal.pos.save /var/log/journal.pos
+    fi
+    os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
+    os::log::debug "$( oc set env daemonset/logging-fluentd JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
+    os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
+    if [ ${NPROJECTS:-0} -gt 0 ] ; then
+        for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
+            os::log::debug "$( oc delete project $proj )"
+        done
+    fi
+    # this will call declare_test_end, suite_end, etc.
+    os::test::junit::reconcile_output
+    exit $result_code
+}
+trap "cleanup" INT TERM EXIT
 
 # set to true if running this test on an OS whose journal format
 # is not compatible with el7 (e.g. fedora)
@@ -464,40 +526,12 @@ NFMT=${NFMT:-"%0${NSIZE}d"}
 # total size of a record
 MSGSIZE=${MSGSIZE:-599}
 
-cleanup() {
-    local result_code=$?
-    set +e
-    endts=${endts:-$( date +%s )}
-    kill $monitor_pids
-    oc logs $fpod > $ARTIFACT_DIR/$fpod.log
-    if [ -n "${muxpod}" ] ; then
-#        oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
-        oc exec $muxpod -- cat /var/log/fluentd.log > $ARTIFACT_DIR/$muxpod.log
-        os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT- DEBUG- )"
-    fi
-    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
-    process_stats
-    if [ -n "$workdir" -a -d "$workdir" ] ; then
-        rm -rf $workdir
-    fi
-    os::log::debug "$( oc label node --all logging-infra-fluentd- )"
-    os::cmd::try_until_failure "oc get pod $fpod"
-    if [ -f /var/log/journal.pos.save ] ; then
-        mv /var/log/journal.pos.save /var/log/journal.pos
-    fi
-    os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
-    os::log::debug "$( oc set env daemonset/logging-fluentd JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
-    os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
-    if [ ${NPROJECTS:-0} -gt 0 ] ; then
-        for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
-            os::log::debug "$( oc delete project $proj )"
-        done
-    fi
-    # this will call declare_test_end, suite_end, etc.
-    os::test::junit::reconcile_output
-    exit $result_code
-}
-trap "cleanup" INT TERM EXIT
+# use the debug=true flag in the monitoring endpoint for fluentd es
+# plugins to get additional information - impacts performance
+USE_DEBUG_ES_ENDPOINT=${USE_DEBUG_ES_ENDPOINT:-false}
+
+# set env DEBUG=true on mux pod - dump in pod to /var/log/fluentd.log
+USE_MUX_DEBUG=${USE_MUX_DEBUG:-false}
 
 os::log::info Begin fluentd to elasticsearch performance test at $( date )
 
@@ -532,10 +566,13 @@ muxpod=$( get_running_pod mux )
 # use monitor agent in mux
 if [ -n "$muxpod" ] ; then
     os::log::info Configure mux to enable monitor agent
-    os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true DEBUG=true )"
+    os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true DEBUG=$USE_MUX_DEBUG )"
     os::log::info Redeploying mux . . .
     os::log::debug "$( oc rollout status -w dc/logging-mux )"
 fi
+
+# start this right before starting fluentd/mux
+get_all_es_monitor_stats
 
 os::log::info Configure fluentd to use test logs and redeploy . . .
 # undeploy fluentd
