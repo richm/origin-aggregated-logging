@@ -471,7 +471,9 @@ cleanup() {
     kill $monitor_pids
     oc logs $fpod > $ARTIFACT_DIR/$fpod.log
     if [ -n "${muxpod}" ] ; then
-        oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
+#        oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
+        oc exec $muxpod -- cat /var/log/fluentd.log > $ARTIFACT_DIR/$muxpod.log
+        os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT- DEBUG- )"
     fi
     { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
     process_stats
@@ -530,7 +532,7 @@ muxpod=$( get_running_pod mux )
 # use monitor agent in mux
 if [ -n "$muxpod" ] ; then
     os::log::info Configure mux to enable monitor agent
-    os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true )"
+    os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true DEBUG=true )"
     os::log::info Redeploying mux . . .
     os::log::debug "$( oc rollout status -w dc/logging-mux )"
 fi
