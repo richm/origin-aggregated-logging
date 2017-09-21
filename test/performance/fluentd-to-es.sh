@@ -3,6 +3,10 @@
 # Test how long it takes for logs to be read by fluentd and show
 # up in elasticsearch
 
+pushd $( dirname $0 )
+scriptdir=$( pwd )
+popd
+
 source "$(dirname "${BASH_SOURCE[0]}" )/../../hack/lib/init.sh"
 source "${OS_O_A_L_DIR}/deployer/scripts/util.sh"
 os::util::environment::use_sudo
@@ -135,6 +139,31 @@ cnvt_top_fluentd_output() {
 '
 }
 
+# note - only supports 1 host for now
+# 1506020088
+# host            bc ba bq bs br
+# 10.128.0.136 50533  0  0  4  0
+# convert to
+# 1506020088 50533 0 0 4 0 bc-rate (bc(n)-bc(n-1))
+process_es_bulk() {
+    awk '
+    NF == 1 {ts=$1}
+    /^host/ {next}
+    NF > 1 {if (!bcprev) {bcprev=$2}; print ts, $2, $3, $4, $5, $6, ($2-bcprev); bcprev=$2}
+'
+}
+
+process_es_count() {
+    awk '{if (!countprev) {countprev=$2}; print $1, $2, ($2-countprev); countprev=$2}'
+}
+
+# fluentd/mux stats are in this format now:
+#        stats for es                            stats for es-ops                        stats for forward
+# time_t queue_length total_queued_bytes retries queue_length total_queued_bytes retries queue_length total_queued_bytes retries
+# for example
+# 1505962928 1 225456 0 1 294920 0 0 0 0
+# if using mux, the mux pod stats will have es (and es-ops) only, and fluentd will have
+# secure_forward only (those columns will be all 0)
 process_stats() {
     local file_col_field_mem_cpu_queue=""
     local file_col_field_rss_buf_emit=""
@@ -158,18 +187,21 @@ process_stats() {
                        file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $datfile 5 ${comp}-RES"
                        file_col_field_etc="$file_col_field_etc $datfile 4 ${comp}-VIRT"
                       continue ;;
-            *logging-mux-*.log) muxlog=$file ; continue ;;
-            *-es.stats) pref=${comp}-es ;;
-            *-es-ops.stats) pref=${comp}-es-ops ;;
-            *-forward.stats) pref=${comp}-forward ;;
+            *.stats) pref=${comp}
+                     file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 3 ${pref}-es-BUF-SZ $file 6 ${pref}-es-ops-BUF-SZ $file 9 ${pref}-fwd-BUF-SZ"
+                     file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file 2 ${pref}-es-Q-LEN $file 5 ${pref}-es-ops-Q-LEN $file 8 ${pref}-fwd-Q-LEN"
+                     file_col_field_etc="$file_col_field_etc $file 4 ${pref}-es-RETRIES $file 7 ${pref}-es-ops-RETRIES $file 10 ${pref}-fwd-RETRIES"
+                     continue ;;
+            *.bulk) pref=${comp}
+                    cat $file | process_es_bulk > $file.cooked
+                    file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file.cooked 7 ${pref}-es-bulk-rate"
+                    continue ;;
+            *.count) pref=${comp}
+                    cat $file | process_es_count > $file.cooked
+                    file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file.cooked 3 ${pref}-es-doc-rate"
+                    continue ;;
             *) continue ;;
         esac
-        file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 4 ${pref}-BUF-SZ"
-        if [ "$pref" = "mux-es" -o "$pref" = "mux-es-ops" ] ; then
-            file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 9 ${pref}-EMIT"
-        fi
-        file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file 3 ${pref}-Q-LEN"
-        file_col_field_etc="$file 2 ${pref}-DUR $file 5 ${pref}-RETRIES"
     done
     local duration=$(( endts - startts ))
     cat <<EOF > $ARTIFACT_DIR/extra.dat
@@ -338,120 +370,6 @@ create_test_log_files() {
     fi
 }
 
-monitor_pids=""
-
-run_top_on_pod() {
-    stdbuf -o 0 oc exec $1 -- top -b -d 1 > $ARTIFACT_DIR/$1.top.raw & monitor_pids="$monitor_pids $!"
-}
-
-get_secure_forward_plugin_id() {
-    oc exec $1 -- curl -s http://localhost:24220/api/plugins.json | \
-        python -c 'import sys,json; print [xx["plugin_id"] for xx in json.load(sys.stdin)["plugins"] if xx.get("type") == "secure_forward"][0]'
-}
-
-get_es_plugin_id() {
-    oc exec $1 -- curl -s http://localhost:24220/api/plugins.json | \
-        python -c 'import sys,json
-hsh = json.load(sys.stdin)["plugins"]
-matches = [xx["plugin_id"] for xx in hsh if -1 < xx["config"].get("buffer_path", "").find("output-es-config")]
-if not matches:
-   matches = [xx["plugin_id"] for xx in hsh if xx["config"].get("host") == "logging-es"]
-if matches:
-  print matches[0]
-else:
-  print "Error: es_plugin_id not found"
-'
-}
-
-get_es_ops_plugin_id() {
-    oc exec $1 -- curl -s http://localhost:24220/api/plugins.json | \
-        python -c 'import sys,json
-hsh = json.load(sys.stdin)["plugins"]
-matches = [xx["plugin_id"] for xx in hsh if -1 < xx["config"].get("buffer_path", "").find("output-es-ops-config")]
-if not matches:
-   matches = [xx["plugin_id"] for xx in hsh if xx["config"].get("host") == "logging-es-ops"]
-if matches:
-  print matches[0]
-else:
-  print "Error: es_ops_plugin_id not found"
-'
-}
-
-# if using mux, grab the secure_forward output plugin from fluentd, and grab
-# the mux es output plugins
-# if not using mux, grab the fluentd es output plugins
-# richm 20170717 - /api/plugins.json?@type=name isn't working - have to parse the full json
-#                  output to get the plugin id, then ?@id=$id works
-setup_fluentd_monitors() {
-    fluentd_monitors=""
-    if [ -n "${muxpod:-}" ] ; then
-        os::cmd::try_until_success "get_secure_forward_plugin_id $fpod"
-        secure_forward_plugin_id=$( get_secure_forward_plugin_id $fpod )
-        os::cmd::try_until_success "get_es_ops_plugin_id $muxpod"
-        es_ops_plugin_id=$( get_es_ops_plugin_id $muxpod )
-        os::cmd::try_until_success "get_es_plugin_id $muxpod"
-        es_plugin_id=$( get_es_plugin_id $muxpod )
-        fluentd_monitors="$fpod $secure_forward_plugin_id get_fluentd_monitor_sf_stats forward $muxpod $es_ops_plugin_id get_fluentd_monitor_es_stats es-ops $muxpod $es_plugin_id get_fluentd_monitor_es_stats es"
-    else
-        os::cmd::try_until_success "get_es_ops_plugin_id $fpod"
-        es_ops_plugin_id=$( get_es_ops_plugin_id $fpod )
-        os::cmd::try_until_success "get_es_plugin_id $fpod"
-        es_plugin_id=$( get_es_plugin_id $fpod )
-        fluentd_monitors="$fpod $es_ops_plugin_id get_fluentd_monitor_es_stats es-ops $fpod $es_plugin_id get_fluentd_monitor_es_stats es"
-    fi
-}
-
-# why get starts and endts?  because when fluentd is heavily loaded the
-# monitor endpoint may not respond for several seconds - so we need to
-# capture this information too
-get_fluentd_monitor_sf_stats() {
-    oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2 | \
-        python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"])' $( date -u +%s )
-}
-
-get_fluentd_monitor_es_stats() {
-    if [ $USE_DEBUG_ES_ENDPOINT = true ] ; then
-        oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2\&debug=true | \
-            python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count} {next_flush_time} {last_retry_time} {next_retry_time} {emit_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"], next_flush_time=hsh["instance_variables"]["next_flush_time"], last_retry_time=hsh["instance_variables"]["last_retry_time"], next_retry_time=hsh["instance_variables"]["next_retry_time"], emit_count=hsh["instance_variables"]["emit_count"])' $( date -u +%s )
-    else
-        oc exec $1 -- curl -s http://localhost:24220/api/plugins.json\?@id=$2 | \
-            python -c 'import sys,json,time; startts=int(sys.argv[1]); hsh=json.load(sys.stdin)["plugins"][0]; print "{startts} {duration} {bql} {btqs} {retry_count} {next_flush_time} {last_retry_time} {next_retry_time} {emit_count}".format(startts=startts, duration=int(time.time())-startts, bql=hsh["buffer_queue_length"], btqs=hsh["buffer_total_queued_size"], retry_count=hsh["retry_count"], next_flush_time=0, last_retry_time=0, next_retry_time=0, emit_count=0)' $( date -u +%s )
-    fi
-}
-
-get_all_fluentd_monitor_stats() {
-    set -- $fluentd_monitors
-    while [ -n "${1:-}" ] ; do
-        local pod=$1; shift
-        local id=$1; shift
-        local func=$1; shift
-        local name=$1; shift
-        while true ; do
-            $func $pod $id
-            sleep 1
-        done > $ARTIFACT_DIR/$pod.fluentd-$name.stats 2>&1 & monitor_pids="$monitor_pids $!"
-    done
-}
-
-get_all_es_monitor_stats() {
-    while true ; do
-        date +%s
-        oc exec $espod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
-           --key /etc/elasticsearch/secret/admin-key \
-           https://localhost:9200/_cat/thread_pool?v\&h=host,bc,ba,bq,bs,br
-        sleep 1
-    done > $ARTIFACT_DIR/$espod.stats 2>&1 & monitor_pids="$monitor_pids $!"
-    if [ $espod != $esopspod ] ; then
-        while true ; do
-            date +%s
-            oc exec $esopspod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
-               --key /etc/elasticsearch/secret/admin-key \
-               https://localhost:9200/_cat/thread_pool?v\&h=host,bc,ba,bq,bs,br
-            sleep 1
-        done > $ARTIFACT_DIR/$esopspod.stats 2>&1 & monitor_pids="$monitor_pids $!"
-    fi
-}
-
 cleanup() {
     local result_code=$?
     set +e
@@ -459,7 +377,7 @@ cleanup() {
     kill $monitor_pids
     oc logs $fpod > $ARTIFACT_DIR/$fpod.log
     if [ -n "${muxpod}" ] ; then
-        if [ $USE_MUX_DEBUG = false ] ; then
+        if [ ${USE_MUX_DEBUG:-false} = false ] ; then
             oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
         else
             oc exec $muxpod -- cat /var/log/fluentd.log > $ARTIFACT_DIR/$muxpod.log
@@ -495,7 +413,7 @@ trap "cleanup" INT TERM EXIT
 USE_CONTAINER_FOR_JOURNAL_FORMAT=false
 
 # need a temp dir for log files
-workdir=`mktemp -p /var/tmp -d`
+workdir=$( mktemp -p /var/tmp -d )
 mkdir -p $workdir
 confdir=$workdir/config
 datadir=$workdir/data
@@ -518,17 +436,13 @@ contprefix="this-is-container-"
 PROJ_FMT="${projprefix}%0${NPSIZE}.f"
 
 # number of messages per project
-NMESSAGES=${NMESSAGES:-50000}
+NMESSAGES=${NMESSAGES:-100000}
 # max number of digits in $NMESSAGES
 NSIZE=$( printf $NMESSAGES | wc -c )
 # printf format for message number
 NFMT=${NFMT:-"%0${NSIZE}d"}
 # total size of a record
 MSGSIZE=${MSGSIZE:-599}
-
-# use the debug=true flag in the monitoring endpoint for fluentd es
-# plugins to get additional information - impacts performance
-USE_DEBUG_ES_ENDPOINT=${USE_DEBUG_ES_ENDPOINT:-false}
 
 # set env DEBUG=true on mux pod - dump in pod to /var/log/fluentd.log
 USE_MUX_DEBUG=${USE_MUX_DEBUG:-false}
@@ -566,13 +480,13 @@ muxpod=$( get_running_pod mux )
 # use monitor agent in mux
 if [ -n "$muxpod" ] ; then
     os::log::info Configure mux to enable monitor agent
-    os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true DEBUG=$USE_MUX_DEBUG )"
+    os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true )"
+    if [ "${USE_MUX_DEBUG:-false}" = true ] ; then
+        os::log::debug "$( oc set env dc/logging-mux DEBUG=$USE_MUX_DEBUG )"
+    fi
     os::log::info Redeploying mux . . .
     os::log::debug "$( oc rollout status -w dc/logging-mux )"
 fi
-
-# start this right before starting fluentd/mux
-get_all_es_monitor_stats
 
 os::log::info Configure fluentd to use test logs and redeploy . . .
 # undeploy fluentd
@@ -587,19 +501,14 @@ os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
 # wait for fluentd to start
 os::cmd::try_until_text "oc get pods -l component=fluentd" "^logging-fluentd-.* Running "
 
+ARTIFACT_DIR=$ARTIFACT_DIR $scriptdir/monitor_logging.sh > $ARTIFACT_DIR/monitor_logging.out 2>&1 & monitor_pids=$!
+
 # e.g. 100000 messages == 666 second wait time
 max_wait_time=$( expr \( $NMESSAGES \* \( $NPROJECTS + 1 \) \) / 150 )
 
 startts=$( date +%s )
-# get running pods to monitor
 fpod=$( get_running_pod fluentd )
-run_top_on_pod $fpod
 muxpod=$( get_running_pod mux )
-if [ -n "${muxpod:-}" ] ; then
-    run_top_on_pod $muxpod
-fi
-setup_fluentd_monitors
-get_all_fluentd_monitor_stats
 
 os::log::info Running tests . . . ARTIFACT_DIR $ARTIFACT_DIR
 # measure how long it takes - wait until last record is in ES or we time out
