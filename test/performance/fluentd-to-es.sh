@@ -176,9 +176,11 @@ process_stats() {
     fi
     for file in $ARTIFACT_DIR/logging-* ; do
         case $file in
-            */logging-fluentd-*) comp=fluentd ;;
-            */logging-mux-*) comp=mux ;;
-            *) continue ;;
+            */logging-fluentd-*)  comp=fluentd ;;
+            */logging-mux-*)      comp=mux ;;
+            */logging-es-*.bulk)  comp=es ;;
+            */logging-es-*.count) comp=es ;;
+            *)                    continue ;;
         esac
         case $file in
             *.top.raw) datfile=$ARTIFACT_DIR/$comp.top.dat
@@ -187,18 +189,15 @@ process_stats() {
                        file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $datfile 5 ${comp}-RES"
                        file_col_field_etc="$file_col_field_etc $datfile 4 ${comp}-VIRT"
                       continue ;;
-            *.stats) pref=${comp}
-                     file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 3 ${pref}-es-BUF-SZ $file 6 ${pref}-es-ops-BUF-SZ $file 9 ${pref}-fwd-BUF-SZ"
-                     file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file 2 ${pref}-es-Q-LEN $file 5 ${pref}-es-ops-Q-LEN $file 8 ${pref}-fwd-Q-LEN"
-                     file_col_field_etc="$file_col_field_etc $file 4 ${pref}-es-RETRIES $file 7 ${pref}-es-ops-RETRIES $file 10 ${pref}-fwd-RETRIES"
+            *.stats) file_col_field_rss_buf_emit="$file_col_field_rss_buf_emit $file 3 ${comp}-es-BUF-SZ $file 6 ${comp}-es-ops-BUF-SZ $file 9 ${comp}-fwd-BUF-SZ"
+                     file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file 2 ${comp}-es-Q-LEN $file 5 ${comp}-es-ops-Q-LEN $file 8 ${comp}-fwd-Q-LEN"
+                     file_col_field_etc="$file_col_field_etc $file 4 ${comp}-es-RETRIES $file 7 ${comp}-es-ops-RETRIES $file 10 ${comp}-fwd-RETRIES"
                      continue ;;
-            *.bulk) pref=${comp}
-                    cat $file | process_es_bulk > $file.cooked
-                    file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file.cooked 7 ${pref}-es-bulk-rate"
+            *.bulk) cat $file | process_es_bulk > $file.cooked
+                    file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file.cooked 7 ${comp}-bulk-rate"
                     continue ;;
-            *.count) pref=${comp}
-                    cat $file | process_es_count > $file.cooked
-                    file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file.cooked 3 ${pref}-es-doc-rate"
+            *.count) cat $file | process_es_count > $file.cooked
+                    file_col_field_mem_cpu_queue="$file_col_field_mem_cpu_queue $file.cooked 3 ${comp}-doc-rate"
                     continue ;;
             *) continue ;;
         esac
