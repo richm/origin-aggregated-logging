@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+function get_running_pod() {
+    # $1 is component for selector
+    oc get -n $LOGPROJ pods -l component=$1 --no-headers | awk '$3 == "Running" {print $1}'
+}
+
 function get_es_pod() {
     # $1 - cluster name postfix
     if [ -z $(oc get -n $LOGPROJ dc -l cluster-name=logging-${1},es-node-role=clientdata --no-headers | awk '{print $1}') ] ; then
@@ -11,9 +16,57 @@ function get_es_pod() {
     fi
 }
 
+# $1 - es pod name
+# $2 - es endpoint
+# rest - any args to pass to curl
+function curl_es() {
+    local pod="$1"
+    local endpoint="$2"
+    shift; shift
+    local args=( "${@:-}" )
+
+    local secret_dir="/etc/elasticsearch/secret/"
+    oc exec -n $LOGPROJ "${pod}" -- curl --silent --insecure "${args[@]}" \
+                             --key "${secret_dir}admin-key"   \
+                             --cert "${secret_dir}admin-cert" \
+                             "https://localhost:9200${endpoint}"
+}
+
+# $1 - es pod name
+# $2 - es endpoint
+# rest - any args to pass to curl
+function curl_es_input() {
+    local pod="$1"
+    local endpoint="$2"
+    shift; shift
+    local args=( "${@:-}" )
+
+    local secret_dir="/etc/elasticsearch/secret/"
+    oc exec -i "${pod}" -- curl --silent --insecure "${args[@]}" \
+                                --key "${secret_dir}admin-key"   \
+                                --cert "${secret_dir}admin-cert" \
+                                "https://localhost:9200${endpoint}"
+}
+
+function curl_fluentd() {
+    local pod="$1"
+    oc exec -n $LOGPROJ "${pod}" -- curl -s http://localhost:24220/api/plugins.json
+}
+
+# note - this never returns unless the pod dies
+function top_pod() {
+    local pod="$1"
+    stdbuf -o 0 oc exec -n $LOGPROJ "${pod}" -- top -b -d 1
+}
+
+function top_pod_once() {
+    local pod="$1"
+    stdbuf -o 0 oc exec -n $LOGPROJ "${pod}" -- top -b -n 1
+}
+
 get_fluentd_monitor_stats() {
     # $1 is name of pod
-    oc exec -n $LOGPROJ $1 -- curl -s http://localhost:24220/api/plugins.json | \
+    curl_fluentd $1 | \
         python -c 'import sys,json,time
 def get_type(plg):
   return plg["config"].get("@type", None) or plg["config"].get("type", None) or plg.get("type")
@@ -47,41 +100,61 @@ get_all_es_monitor_stats() {
         return
     fi
     while true ; do
-        date +%s
-        oc exec -n $LOGPROJ $espod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
-           --key /etc/elasticsearch/secret/admin-key \
-           https://localhost:9200/_cat/thread_pool?v\&h=host,bc,ba,bq,bs,br
+        if [ -n "$espod" ] ; then
+            date +%s >> $logdir/$espod.bulk 2>&1
+            curl_es $espod /_cat/thread_pool?h=host,bc,ba,bq,bs,br >> $logdir/$espod.bulk 2>&1 || :
+        else
+            espod=$( get_es_pod es )
+        fi
         sleep 1
-    done > $logdir/$espod.bulk 2>&1 & killpids="$killpids $!"
-    stdbuf -o 0 oc exec -n $LOGPROJ $espod -- top -b -d 1 > $logdir/$espod.top.raw & killpids="$killpids $!"
+    done & killpids="$killpids $!"
     while true ; do
-        oc exec -n $LOGPROJ $espod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
-           --key /etc/elasticsearch/secret/admin-key \
-           https://localhost:9200/_cat/count?h=epoch,count
+        if [ -n "$espod" ] ; then
+            top_pod $espod >> $espod.top.raw 2>&1 || :
+        fi
         sleep 1
-    done > $logdir/$espod.count 2>&1 & killpids="$killpids $!"
+        espod=$( get_es_pod es )
+    done & killpids="$killpids $!"
+    while true ; do
+        if [ -n "$espod" ] ; then
+            curl_es $espod /_cat/count?h=epoch,count >> $logdir/$espod.count 2>&1 || :
+        else
+            espod=$( get_es_pod es )
+        fi
+        sleep 1
+    done & killpids="$killpids $!"
 
     if [ $espod != $esopspod ] ; then
         while true ; do
-            date +%s
-            oc exec -n $LOGPROJ $esopspod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
-               --key /etc/elasticsearch/secret/admin-key \
-               https://localhost:9200/_cat/thread_pool?v\&h=host,bc,ba,bq,bs,br
+            if [ -n "$esopspod" ] ; then
+                date +%s >> $logdir/$esopspod.bulk 2>&1
+                curl_es $esopspod /_cat/thread_pool?h=host,bc,ba,bq,bs,br >> $logdir/$esopspod.bulk 2>&1 || :
+            else
+                esopspod=$( get_es_pod es-ops )
+            fi
             sleep 1
-        done > $logdir/$esopspod.bulk 2>&1 & killpids="$killpids $!"
-        stdbuf -o 0 oc exec -n $LOGPROJ $esopspod -- top -b -d 1 > $logdir/$esopspod.top.raw & killpids="$killpids $!"
+        done & killpids="$killpids $!"
         while true ; do
-            oc exec -n $LOGPROJ $esopspod -- curl -s -k --cert /etc/elasticsearch/secret/admin-cert \
-               --key /etc/elasticsearch/secret/admin-key \
-               https://localhost:9200/_cat/count?h=epoch,count
+            if [ -n "$esopspod" ] ; then
+                top_pod $esopspod >> $esopspod.top.raw 2>&1 || :
+            fi
             sleep 1
-        done > $logdir/$esopspod.count 2>&1 & killpids="$killpids $!"
-
+            esopspod=$( get_es_pod es-ops )
+        done & killpids="$killpids $!"
+        while true ; do
+            if [ -n "$esopspod" ] ; then
+                curl_es $esopspod /_cat/count?h=epoch,count >> $logdir/$esopspod.count 2>&1 || :
+            else
+                esopspod=$( get_es_pod es-ops )
+            fi
+            sleep 1
+        done & killpids="$killpids $!"
     fi
 }
 
 check_current_ovirt_hosts() {
-    local starttime=${1:-"3h"}
+    local espod=$1
+    local starttime=${2:-"3h"}
     local hostquery=$logdir/hostquery
     cat > $hostquery <<EOF
 {
@@ -115,17 +188,16 @@ check_current_ovirt_hosts() {
 }
 EOF
     secret=/etc/elasticsearch/secret
-    if oc exec -n $LOGPROJ -i $espod -- curl -s -k --cert $secret/admin-cert --key $secret/admin-key \
-          https://localhost:9200/_cat/indices | grep -q project.ovirt-metrics ; then
+    if curl_es $espod /_cat/indices | grep -q project.ovirt-metrics ; then
         : # has indices
     else
         echo Date: "$( date )" Info: no ovirt-metrics indices yet
-        return
+        return 0
     fi
     hostqueryres=$logdir/hostqueryres
     cat $hostquery | \
-        oc exec -n $LOGPROJ -i $espod -- curl -s -k --cert $secret/admin-cert --key $secret/admin-key \
-           https://localhost:9200/project.ovirt-metrics-*/_search -X POST --data-binary @- > $hostqueryres
+        curl_es_input $espod /project.ovirt-metrics-*/_search \
+                      -X POST --data-binary @- > $hostqueryres || return 1
     cat $hostqueryres | python -c 'import sys,json
 from datetime import datetime,timedelta
 from calendar import timegm
@@ -146,17 +218,16 @@ for bucket in hsh["aggregations"]["hosts"]["buckets"]:
     status = "Info"
   print "{}: {} diff {} records {}".format(status, hn, now-ts, recs)
 print "Date: {} time_t: {} Number of hosts: {}".format(now.isoformat(), timegm(now.timetuple()), len(hsh["aggregations"]["hosts"]["buckets"]))
-' 10 20
+' 5 10
 }
 
 cleanup() {
     local result_code=$?
     set +e
     kill $killpids
-    for pod in $pods $espod $esopspod ; do
+    for pod in $( oc get -n $LOGPROJ pods -o jsonpath='{.items[*].metadata.name}' ) ; do
         oc logs -n $LOGPROJ $pod > $logdir/$pod.pod.log
     done
-    free -h > $logdir/free.out
     exit $result_code
 }
 trap "cleanup" INT TERM EXIT
@@ -175,38 +246,54 @@ esopspod=${esopspod:-$espod}
 GET_ES_STATS=${GET_ES_STATS:-true}
 GET_OVIRT_STATS=${GET_OVIRT_STATS:-false}
 
-pods=
+killpids=""
+
 if [ $USE_MUX = 1 ] ; then
-    muxpods=$( oc get -n $LOGPROJ pods -l component=mux -o jsonpath='{.items[*].metadata.name}' )
-    pods="$pods $muxpods"
-fi
-if [ $USE_FLUENTD = 1 ] ; then
-    fpods=$( oc get -n $LOGPROJ pods -l component=fluentd -o jsonpath='{.items[*].metadata.name}' )
-    pods="$pods $fpods"
+    while true ; do
+        for muxpod in $( get_running_pod mux ) ; do
+            get_fluentd_monitor_stats $muxpod >> $logdir/$muxpod.stats 2>&1 || :
+            top_pod_once $muxpod >> $logdir/$muxpod.top.raw || :
+        done
+        sleep 1
+    done & killpids="$killpids $!"
 fi
 
-killpids=""
-for pod in $pods ; do
+if [ $USE_FLUENTD = 1 ] ; then
     while true ; do
-        get_fluentd_monitor_stats $pod
+        for fpod in $( get_running_pod fluentd ) ; do
+            get_fluentd_monitor_stats $fpod >> $logdir/$fpod.stats 2>&1 || :
+            top_pod_once $fpod >> $logdir/$fpod.top.raw || :
+        done
         sleep 1
-    done > $logdir/$pod.stats 2>&1 & killpids="$killpids $!"
-    stdbuf -o 0 oc exec -n $LOGPROJ $pod -- top -b -d 1 > $logdir/$pod.top.raw & killpids="$killpids $!"
-done
+    done & killpids="$killpids $!"
+fi
 
 get_all_es_monitor_stats
 
 if [ "${GET_OVIRT_STATS:-false}" = true ] ; then
     while true; do
-        check_current_ovirt_hosts
+        if [ -n "$espod" ] ; then
+            check_current_ovirt_hosts $espod ${OLDEST:-3h} >> $logdir/ovirt-hosts.out 2>&1 || :
+        else
+            espod=$( get_es_pod es )
+        fi
         sleep 10 # expensive - not every second
-    done > $logdir/ovirt-hosts.out 2>&1 & killpids="$killpids $!"
+    done & killpids="$killpids $!"
 fi
 
 while true; do
-    df -h | head
+    date +%s
+    df -h | head || :
     sleep 1
 done > $logdir/df.out 2>&1 & killpids="$killpids $!"
+
+while true; do
+    date +%s
+    free -h || :
+    sleep 1
+done > $logdir/free.out 2>&1 & killpids="$killpids $!"
+
+stdbuf -o 0 journalctl -f | grep -i oom-kill > $logdir/oom-kills.out 2>&1 & killpids="$killpids $!"
 
 echo logdir is $logdir - waiting for $killpids
 wait
