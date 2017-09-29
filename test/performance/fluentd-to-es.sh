@@ -435,7 +435,7 @@ contprefix="this-is-container-"
 PROJ_FMT="${projprefix}%0${NPSIZE}.f"
 
 # number of messages per project
-NMESSAGES=${NMESSAGES:-100000}
+NMESSAGES=${NMESSAGES:-300000}
 # max number of digits in $NMESSAGES
 NSIZE=$( printf $NMESSAGES | wc -c )
 # printf format for message number
