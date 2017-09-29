@@ -8,7 +8,7 @@ scriptdir=$( pwd )
 popd
 
 source "$(dirname "${BASH_SOURCE[0]}" )/../../hack/lib/init.sh"
-source "${OS_O_A_L_DIR}/deployer/scripts/util.sh"
+source "${OS_O_A_L_DIR}/hack/testing/util.sh"
 os::util::environment::use_sudo
 
 os::test::junit::declare_suite_start "test/perf-fluent-to-es"
@@ -390,8 +390,8 @@ cleanup() {
     fi
     os::log::debug "$( oc label node --all logging-infra-fluentd- )"
     os::cmd::try_until_failure "oc get pod $fpod"
-    if [ -f /var/log/journal.pos.save ] ; then
-        mv /var/log/journal.pos.save /var/log/journal.pos
+    if sudo test -f /var/log/journal.pos.save ; then
+        sudo mv /var/log/journal.pos.save /var/log/journal.pos
     fi
     os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
     os::log::debug "$( oc set env daemonset/logging-fluentd JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
@@ -451,7 +451,7 @@ os::log::info Begin fluentd to elasticsearch performance test at $( date )
 if [ "${USE_JOURNAL:-true}" = "true" ] ; then
     if [ "${USE_CONTAINER_FOR_JOURNAL_FORMAT:-}" != true ] ; then
         os::log::info installing /usr/lib/systemd/systemd-journal-remote
-        test -x /usr/lib/systemd/systemd-journal-remote || \
+        sudo test -x /usr/lib/systemd/systemd-journal-remote || \
             sudo yum -y install /usr/lib/systemd/systemd-journal-remote 2>&1 | yum_output || \
             sudo dnf -y install /usr/lib/systemd/systemd-journal-remote 2>&1 | yum_output || {
                 os::log::error please install the package containing /usr/lib/systemd/systemd-journal-remote
@@ -494,7 +494,7 @@ os::cmd::try_until_failure "oc get pod $fpod"
 # configure fluentd to use $datadir/journal:/journal/journal as its journal source
 os::log::debug "$( oc set volume daemonset/logging-fluentd --add -t hostPath --name testjournal -m /journal --path $datadir )"
 os::log::debug "$( oc set env daemonset/logging-fluentd JOURNAL_SOURCE=/journal/journal JOURNAL_READ_FROM_HEAD=true ENABLE_MONITOR_AGENT=true )"
-mv /var/log/journal.pos /var/log/journal.pos.save
+sudo mv /var/log/journal.pos /var/log/journal.pos.save
 # redeploy fluentd
 os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
 # wait for fluentd to start
