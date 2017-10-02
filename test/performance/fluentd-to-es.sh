@@ -517,7 +517,9 @@ muxpod=$( get_running_pod mux )
 os::log::info Running tests . . . ARTIFACT_DIR $ARTIFACT_DIR
 # measure how long it takes - wait until last record is in ES or we time out
 qs='{"query":{"term":{"systemd.u.SYSLOG_IDENTIFIER":"'"${prefix}"'"}}}'
-os::cmd::try_until_text "curl_es ${esopspod} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
+if [ $USE_OPS = true ] ; then
+    os::cmd::try_until_text "curl_es ${esopspod} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
+fi
 for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
     os::cmd::try_until_text "curl_es ${espod} /project.${proj}.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
 done
