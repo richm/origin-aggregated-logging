@@ -242,6 +242,7 @@ format_journal() {
     local nrecs=$1
     local prefix=$2
     local msgsize=$3
+    local useops=$4
     local hn=$( hostname -s )
     local startts=$( date -u +%s%6N )
     python -c 'import sys
@@ -249,17 +250,18 @@ nrecs = int(sys.argv[1])
 width = len(sys.argv[1])
 prefix = sys.argv[2]
 msgsize = int(sys.argv[3])
-hn = sys.argv[4]
-tsstr = sys.argv[5]
+useops = sys.argv[4].lower() == "true"
+hn = sys.argv[5]
+tsstr = sys.argv[6]
 ts = int(tsstr)
-pid = sys.argv[6]
-if len(sys.argv) > 7:
-  nproj = int(sys.argv[7])
-  projwidth = len(sys.argv[7])
-  contprefix = sys.argv[8]
-  podprefix = sys.argv[9]
-  projprefix = sys.argv[10]
-  poduuid = sys.argv[11]
+pid = sys.argv[7]
+if len(sys.argv) > 8:
+  nproj = int(sys.argv[8])
+  projwidth = len(sys.argv[8])
+  contprefix = sys.argv[9]
+  podprefix = sys.argv[10]
+  projprefix = sys.argv[11]
+  poduuid = sys.argv[12]
   contfields = """CONTAINER_NAME=k8s_{contprefix}{{jj:0{projwidth}d}}.deadbeef_{podprefix}{{jj:0{projwidth}d}}_{projprefix}{{jj:0{projwidth}d}}_{poduuid}_abcdef01
 CONTAINER_ID={xx}
 CONTAINER_ID_FULL={yy}
@@ -291,12 +293,13 @@ template = template + """MESSAGE={prefix}-{{ii:0{width}d}} {msg:0{padlen}d}
 conttemplate = template + contfields
 
 for ii in xrange(1, nrecs + 1):
-  sys.stdout.write(template.format(ts=ts, ii=ii) + "\n")
-  ts = ts + 1
+  if useops:
+    sys.stdout.write(template.format(ts=ts, ii=ii) + "\n")
+    ts = ts + 1
   for jj in xrange(1, nproj + 1):
     sys.stdout.write(conttemplate.format(ts=ts, ii=ii, jj=jj) + "\n")
     ts = ts + 1
-' $nrecs $prefix $msgsize $hn $startts $$ ${NPROJECTS:-0} ${contprefix:-""} ${podprefix:-""} ${projprefix:-""} $( uuidgen )
+' $nrecs $prefix $msgsize $useops $hn $startts $$ ${NPROJECTS:-0} ${contprefix:-""} ${podprefix:-""} ${projprefix:-""} $( uuidgen )
 }
 
 format_json_filename() {
@@ -349,7 +352,7 @@ create_test_log_files() {
         }
     fi
 
-    $formatter $NMESSAGES $prefix $MSGSIZE | sysfilter
+    $formatter $NMESSAGES $prefix $MSGSIZE ${USE_OPS:-true} | sysfilter
     postprocesssystemlog
     if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
         if [ $NPROJECTS -gt 0 ] ; then
@@ -434,6 +437,8 @@ contprefix="this-is-container-"
 # for the seq -f argument
 PROJ_FMT="${projprefix}%0${NPSIZE}.f"
 
+# create operations index/data
+USE_OPS=${USE_OPS:-true}
 # number of messages per project
 NMESSAGES=${NMESSAGES:-300000}
 # max number of digits in $NMESSAGES
