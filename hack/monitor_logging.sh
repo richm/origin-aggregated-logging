@@ -293,7 +293,7 @@ while true; do
     sleep 1
 done > $logdir/free.out 2>&1 & killpids="$killpids $!"
 
-stdbuf -o 0 journalctl -f | grep -i oom-kill > $logdir/oom-kills.out 2>&1 & killpids="$killpids $!"
+stdbuf -o 0 sudo journalctl -f | grep -i oom-kill > $logdir/oom-kills.out 2>&1 & killpids="$killpids $!"
 
 echo logdir is $logdir - waiting for $killpids
 wait
