@@ -110,7 +110,7 @@ get_all_es_monitor_stats() {
     done & killpids="$killpids $!"
     while true ; do
         if [ -n "$espod" ] ; then
-            top_pod $espod >> $espod.top.raw 2>&1 || :
+            top_pod $espod >> $logdir/$espod.top.raw 2>&1 || :
         fi
         sleep 1
         espod=$( get_es_pod es )
@@ -136,7 +136,7 @@ get_all_es_monitor_stats() {
         done & killpids="$killpids $!"
         while true ; do
             if [ -n "$esopspod" ] ; then
-                top_pod $esopspod >> $esopspod.top.raw 2>&1 || :
+                top_pod $esopspod >> $logdir/$esopspod.top.raw 2>&1 || :
             fi
             sleep 1
             esopspod=$( get_es_pod es-ops )
