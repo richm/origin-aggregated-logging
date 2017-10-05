@@ -378,6 +378,18 @@ cleanup() {
     endts=${endts:-$( date +%s )}
     kill $monitor_pids
     oc logs $fpod > $ARTIFACT_DIR/$fpod.log
+    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
+    process_stats
+    if [ -n "$workdir" -a -d "$workdir" ] ; then
+        rm -rf $workdir
+    fi
+    os::log::debug "$( oc label node --all --overwrite logging-infra-fluentd- 2>&1 )"
+    os::log::debug "$( os::cmd::try_until_failure "oc get pod $fpod" )"
+    if sudo test -f /var/log/journal.pos.save ; then
+        sudo mv /var/log/journal.pos.save /var/log/journal.pos
+    fi
+    os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
+    os::log::debug "$( oc set env daemonset/logging-fluentd JSON_FILE_PATH- JSON_FILE_POS_FILE- JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
     if [ -n "${muxpod}" ] ; then
         if [ ${USE_MUX_DEBUG:-false} = false ] ; then
             oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
@@ -385,26 +397,16 @@ cleanup() {
             oc exec $muxpod -- cat /var/log/fluentd.log > $ARTIFACT_DIR/$muxpod.log
         fi
         os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT- DEBUG- )"
+        os::log::debug "$( oc rollout status -w dc/logging-mux )"
     fi
-    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
-    process_stats
-    if [ -n "$workdir" -a -d "$workdir" ] ; then
-        rm -rf $workdir
-    fi
-    os::log::debug "$( oc label node --all logging-infra-fluentd- 2>&1 )"
-    os::log::debug "$( os::cmd::try_until_failure "oc get pod $fpod" )"
-    if sudo test -f /var/log/journal.pos.save ; then
-        sudo mv /var/log/journal.pos.save /var/log/journal.pos
-    fi
-    os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
-    os::log::debug "$( oc set env daemonset/logging-fluentd JSON_FILE_PATH- JSON_FILE_POS_FILE- JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
-    os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
     if [ ${NPROJECTS:-0} -gt 0 ] ; then
         for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
             os::log::debug "$( oc delete project $proj 2>&1 )"
             os::log::debug "$( os::cmd::try_until_failure "oc get project $proj" 2>&1 )"
         done
     fi
+    os::log::debug "$( oc label node --all --overwrite logging-infra-fluentd=true 2>&1 )"
+    os::log::debug "$( os::cmd::try_until_text "oc get pods -l component=fluentd" "^logging-fluentd-.* Running " )"
     # this will call declare_test_end, suite_end, etc.
     os::test::junit::reconcile_output
     exit $result_code
