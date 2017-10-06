@@ -319,8 +319,10 @@ tsstr = sys.argv[5]
 ts = datetime.fromtimestamp(float(tsstr))
 usec = timedelta(microseconds=1)
 msgtmpl = "{prefix}-{{ii:0{width}d}} {msg:0{msgsize}d}".format(prefix=prefix, width=width, msgsize=msgsize, msg=0)
+hsh = {"hostname": hn, "level": "err", "systemd":{"u":{"SYSLOG_IDENTIFIER":prefix}}}
 for ii in xrange(1, nrecs + 1):
-  hsh = {"@timestamp": ts.isoformat()+"+00:00", "hostname": hn, "level": "err", "message":msgtmpl.format(ii=ii)}
+  hsh["@timestamp"] = ts.isoformat()+"+00:00"
+  hsh["message"] = msgtmpl.format(ii=ii)
   sys.stdout.write(json.dumps(hsh, indent=None, separators=(",", ":")) + "\n")
   ts = ts + usec
 ' $nrecs $prefix $msgsize $hn $startts
@@ -381,8 +383,10 @@ create_test_log_files() {
         }
     fi
 
-    $formatter $NMESSAGES $prefix $MSGSIZE ${USE_OPS:-true} | sysfilter
-    postprocesssystemlog
+    if [ ${USE_OPS:-true} = false -o ${USE_JOURNAL_FOR_CONTAINERS:-true} = true ] ; then
+        $formatter $NMESSAGES $prefix $MSGSIZE ${USE_OPS:-true} | sysfilter
+        postprocesssystemlog
+    fi
     if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
         if [ $NPROJECTS -gt 0 ] ; then
             while [ $ii -le $NMESSAGES ] ; do
@@ -398,6 +402,17 @@ create_test_log_files() {
                 ii=`expr $ii + 1`
             done
         fi
+    fi
+    if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
+        if [ ! -d $datadir/external ] ; then
+            mkdir -p $datadir/external
+        fi
+        ii=1
+        while [ $ii -le ${NPROJECTS:-0} ] ; do
+            fn=$( format_external_project_filename $ii )
+            format_external_project $NMESSAGES $prefix $MSGSIZE > $datadir/external/$fn
+            ii=$( expr $ii + 1 )
+        done
     fi
 }
 
@@ -417,15 +432,24 @@ cleanup() {
     if sudo test -f /var/log/journal.pos.save ; then
         sudo mv /var/log/journal.pos.save /var/log/journal.pos
     fi
-    os::log::debug "$( oc set volume daemonset/logging-fluentd --remove --name testjournal )"
-    os::log::debug "$( oc set env daemonset/logging-fluentd JSON_FILE_PATH- JSON_FILE_POS_FILE- JOURNAL_SOURCE- JOURNAL_READ_FROM_HEAD- )"
+    if [ -n "${fcmsave:-}" -a -f "${fcmsave:-}" ] ; then
+        os::log::debug "$( oc replace --force -f $fcmsave )"
+    fi
+    if [ -n "${fdssave:-}" -a -f "${fdssave:-}" ] ; then
+        os::log::debug "$( oc replace --force -f $fdssave )"
+    fi
     if [ -n "${muxpod}" ] ; then
         if [ ${USE_MUX_DEBUG:-false} = false ] ; then
             oc logs $muxpod > $ARTIFACT_DIR/$muxpod.log
         else
             oc exec $muxpod -- cat /var/log/fluentd.log > $ARTIFACT_DIR/$muxpod.log
         fi
-        os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT- DEBUG- )"
+        if [ -n "${mcmsave:-}" -a -f "${mcmsave:-}" ] ; then
+            os::log::debug "$( oc replace --force -f $mcmsave )"
+        fi
+        if [ -n "${mdcsave:-}" -a -f "${mdcsave:-}" ] ; then
+            os::log::debug "$( oc replace --force -f $mdcsave )"
+        fi
         os::log::debug "$( oc rollout status -w dc/logging-mux )"
     fi
     if [ ${NPROJECTS:-0} -gt 0 ] ; then
@@ -444,7 +468,7 @@ trap "cleanup" INT TERM EXIT
 
 # set to true if running this test on an OS whose journal format
 # is not compatible with el7 (e.g. fedora)
-USE_CONTAINER_FOR_JOURNAL_FORMAT=false
+USE_CONTAINER_FOR_JOURNAL_FORMAT=${USE_CONTAINER_FOR_JOURNAL_FORMAT:-false}
 
 # need a temp dir for log files
 workdir=$( mktemp -p /var/tmp -d )
@@ -514,6 +538,11 @@ esopspod=${esopspod:-$espod}
 fpod=$( get_running_pod fluentd )
 muxpod=$( get_running_pod mux )
 
+fdssave=$( $ARTIFACT_DIR/f-ds-orig.yaml )
+oc get ds/logging-fluentd -o yaml > $fdssave
+fcmsave=$( $ARTIFACT_DIR/f-cm-orig.yaml )
+oc get cm/logging-fluentd -o yaml > $fcmsave
+
 os::log::info Configure fluentd to use test logs and redeploy . . .
 # undeploy fluentd
 os::log::debug "$( oc label node --all logging-infra-fluentd- )"
@@ -521,6 +550,11 @@ os::cmd::try_until_failure "oc get pod $fpod"
 sudo rm -rf /var/lib/fluentd/*
 # use monitor agent in mux
 if [ -n "$muxpod" ] ; then
+    mdcsave=$( $ARTIFACT_DIR/m-dc-orig.yaml )
+    oc get dc/logging-mux -o yaml > $mdcsave
+    mcmsave=$( $ARTIFACT_DIR/m-cm-orig.yaml )
+    oc get cm/logging-mux -o yaml > $mcmsave
+
     os::log::info Configure mux to enable monitor agent
     os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true )"
     if [ "${USE_MUX_DEBUG:-false}" = true ] ; then
