@@ -302,9 +302,38 @@ for ii in xrange(1, nrecs + 1):
 ' $nrecs $prefix $msgsize $useops $hn $startts $$ ${NPROJECTS:-0} ${contprefix:-""} ${podprefix:-""} ${projprefix:-""} $( uuidgen )
 }
 
-format_json_filename() {
+format_external_project() {
+    local nrecs=$1
+    local prefix=$2
+    local msgsize=$3
+    local hn=$( hostname -s )
+    local startts=$( date -u +%s.%6N )
+    python -c 'import sys,json
+from datetime import datetime,timedelta
+nrecs = int(sys.argv[1])
+width = len(sys.argv[1])
+prefix = sys.argv[2]
+msgsize = int(sys.argv[3])
+hn = sys.argv[4]
+tsstr = sys.argv[5]
+ts = datetime.fromtimestamp(float(tsstr))
+usec = timedelta(microseconds=1)
+msgtmpl = "{prefix}-{{ii:0{width}d}} {msg:0{msgsize}d}".format(prefix=prefix, width=width, msgsize=msgsize, msg=0)
+for ii in xrange(1, nrecs + 1):
+  hsh = {"@timestamp": ts.isoformat()+"+00:00", "hostname": hn, "level": "err", "message":msgtmpl.format(ii=ii)}
+  sys.stdout.write(json.dumps(hsh, indent=None, separators=(",", ":")) + "\n")
+  ts = ts + usec
+' $nrecs $prefix $msgsize $hn $startts
+}
+
+format_json-file_filename() {
     # $1 - $ii
     printf "%s${NPFMT}_%s${NPFMT}_%s${NPFMT}-%s.log\n" "$podprefix" $1 "$projprefix" $1 "$contprefix" $1 "`echo $1 | sha256sum | awk '{print $1}'`"
+}
+
+format_external_project_filename() {
+    # $1 - $ii
+    printf "project.%s${NPFMT}.log\n" "$projprefix" $1
 }
 
 # CONTAINER_NAME=k8s_bob.94e110c7_bob-iq0d4_default_2d67916a-1eac-11e6-94ba-001c42e13e5d_8b4b7e3d
@@ -360,7 +389,7 @@ create_test_log_files() {
                 jj=1
                 while [ $jj -le $NPROJECTS ] ; do
                     if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-                        fn=$( format_json_filename $jj )
+                        fn=$( format_json-file_filename $jj )
                         format_json_message full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $datadir/docker/$fn
                         format_json_message short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $orig
                     fi
