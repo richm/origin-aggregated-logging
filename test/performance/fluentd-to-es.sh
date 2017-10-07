@@ -383,12 +383,11 @@ create_test_log_files() {
         }
     fi
 
-    if [ ${USE_OPS:-true} = false -o ${USE_JOURNAL_FOR_CONTAINERS:-true} = true ] ; then
+    if [ ${USE_OPS:-true} = true -o ${USE_JOURNAL_FOR_CONTAINERS:-true} = true ] ; then
         $formatter $NMESSAGES $prefix $MSGSIZE ${USE_OPS:-true} | sysfilter
         postprocesssystemlog
     fi
     if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-        if [ $NPROJECTS -gt 0 ] ; then
             while [ $ii -le $NMESSAGES ] ; do
                 jj=1
                 while [ $jj -le $NPROJECTS ] ; do
