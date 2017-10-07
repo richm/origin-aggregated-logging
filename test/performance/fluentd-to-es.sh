@@ -450,6 +450,7 @@ cleanup() {
             os::log::debug "$( os::cmd::try_until_failure "oc get dc logging-mux" )"
             os::log::debug "$( oc create -f $mdcsave )"
             os::log::debug "$( oc scale --replicas=1 dc/logging-mux )"
+            os::log::debug "$( oc rollout status -w dc/logging-mux )"
         fi
     fi
     if [ ${NPROJECTS:-0} -gt 0 ] ; then
