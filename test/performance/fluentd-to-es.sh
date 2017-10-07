@@ -388,19 +388,18 @@ create_test_log_files() {
         postprocesssystemlog
     fi
     if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-            while [ $ii -le $NMESSAGES ] ; do
-                jj=1
-                while [ $jj -le $NPROJECTS ] ; do
-                    if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-                        fn=$( format_json-file_filename $jj )
-                        format_json_message full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $datadir/docker/$fn
-                        format_json_message short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $orig
-                    fi
-                    jj=`expr $jj + 1`
-                done
-                ii=`expr $ii + 1`
+        while [ $ii -le $NMESSAGES ] ; do
+            jj=1
+            while [ $jj -le $NPROJECTS ] ; do
+                if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
+                    fn=$( format_json-file_filename $jj )
+                    format_json_message full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $datadir/docker/$fn
+                    format_json_message short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $orig
+                fi
+                jj=`expr $jj + 1`
             done
-        fi
+            ii=`expr $ii + 1`
+        done
     fi
     if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
         if [ ! -d $datadir/project ] ; then
