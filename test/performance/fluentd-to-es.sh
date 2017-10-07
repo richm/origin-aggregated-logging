@@ -576,10 +576,8 @@ if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
       path /project/*.log\
       tag *.test\
       pos_file /project/project.pos\
-      time_format %Y-%m-%dT%H:%M:%S.%N%Z\
       format json\
       keep_time_key true\
-      time_key @timestamp\
       read_from_head true\
     </source>\
 ' | oc replace --force -f -
