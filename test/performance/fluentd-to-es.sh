@@ -576,7 +576,7 @@ if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
       @type tail\
       @label @INGRESS\
       path /project/*.log\
-      tag *\
+      tag *.test\
       pos_file /project/project.pos\
       time_format %Y-%m-%dT%H:%M:%S.%N%Z\
       format json\
