@@ -538,9 +538,9 @@ esopspod=${esopspod:-$espod}
 fpod=$( get_running_pod fluentd )
 muxpod=$( get_running_pod mux )
 
-fdssave=$( $ARTIFACT_DIR/f-ds-orig.yaml )
+fdssave=$ARTIFACT_DIR/f-ds-orig.yaml
 oc get ds/logging-fluentd -o yaml > $fdssave
-fcmsave=$( $ARTIFACT_DIR/f-cm-orig.yaml )
+fcmsave=$ARTIFACT_DIR/f-cm-orig.yaml
 oc get cm/logging-fluentd -o yaml > $fcmsave
 
 os::log::info Configure fluentd to use test logs and redeploy . . .
@@ -550,9 +550,9 @@ os::cmd::try_until_failure "oc get pod $fpod"
 sudo rm -rf /var/lib/fluentd/*
 # use monitor agent in mux
 if [ -n "$muxpod" ] ; then
-    mdcsave=$( $ARTIFACT_DIR/m-dc-orig.yaml )
+    mdcsave=$ARTIFACT_DIR/m-dc-orig.yaml
     oc get dc/logging-mux -o yaml > $mdcsave
-    mcmsave=$( $ARTIFACT_DIR/m-cm-orig.yaml )
+    mcmsave=$ARTIFACT_DIR/m-cm-orig.yaml
     oc get cm/logging-mux -o yaml > $mcmsave
 
     os::log::info Configure mux to enable monitor agent
