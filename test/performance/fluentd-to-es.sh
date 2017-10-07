@@ -446,9 +446,11 @@ cleanup() {
             os::log::debug "$( oc replace --force -f $mcmsave )"
         fi
         if [ -n "${mdcsave:-}" -a -f "${mdcsave:-}" ] ; then
-            os::log::debug "$( oc replace --force -f $mdcsave )"
+            os::log::debug "$( oc delete dc logging-mux )"
+            os::log::debug "$( os::cmd::try_until_failure "oc get dc logging-mux" )"
+            os::log::debug "$( oc create -f $mdcsave )"
+            os::log::debug "$( oc scale --replicas=1 dc/logging-mux )"
         fi
-        os::log::debug "$( oc rollout status -w dc/logging-mux )"
     fi
     if [ ${NPROJECTS:-0} -gt 0 ] ; then
         for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
