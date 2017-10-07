@@ -335,7 +335,7 @@ format_json-file_filename() {
 
 format_external_project_filename() {
     # $1 - $ii
-    printf "project.%s${NPFMT}.log\n" "$projprefix" $1
+    printf "%s${NPFMT}.log\n" "$projprefix" $1
 }
 
 # CONTAINER_NAME=k8s_bob.94e110c7_bob-iq0d4_default_2d67916a-1eac-11e6-94ba-001c42e13e5d_8b4b7e3d
@@ -404,13 +404,13 @@ create_test_log_files() {
         fi
     fi
     if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
-        if [ ! -d $datadir/external ] ; then
-            mkdir -p $datadir/external
+        if [ ! -d $datadir/project ] ; then
+            mkdir -p $datadir/project
         fi
         ii=1
         while [ $ii -le ${NPROJECTS:-0} ] ; do
             fn=$( format_external_project_filename $ii )
-            format_external_project $NMESSAGES $prefix $MSGSIZE > $datadir/external/$fn
+            format_external_project $NMESSAGES $prefix $MSGSIZE > $datadir/project/$fn
             ii=$( expr $ii + 1 )
         done
     fi
@@ -567,6 +567,25 @@ fi
 os::log::debug "$( oc set volume daemonset/logging-fluentd --add -t hostPath --name testjournal -m /journal --path $datadir )"
 os::log::debug "$( oc set env daemonset/logging-fluentd JSON_FILE_PATH="/journal/*.log" JSON_FILE_POS_FILE=/journal/es-containers.log.pos JOURNAL_SOURCE=/journal/journal JOURNAL_READ_FROM_HEAD=true ENABLE_MONITOR_AGENT=true )"
 sudo mv /var/log/journal.pos /var/log/journal.pos.save
+if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
+    # configure fluentd to read from $datadir/project/*.log
+    os::log::debug "$( oc set volume daemonset/logging-fluentd --add -t hostPath --name testexternal -m /project --path $datadir/project )"
+    oc get cm logging-fluentd -o yaml | \
+      sed -e '/@include configs[.]d\/openshift\/input-pre-[*][.]conf/a\
+    <source>\
+      @type tail\
+      @label @INGRESS\
+      path /project/*.log\
+      tag *\
+      pos_file /project/project.pos\
+      time_format %Y-%m-%dT%H:%M:%S.%N%Z\
+      format json\
+      keep_time_key true\
+      time_key @timestamp\
+      read_from_head true\
+    </source>\
+' | oc replace --force -f -
+fi
 # redeploy fluentd
 os::log::debug "$( oc label node --all logging-infra-fluentd=true )"
 # wait for fluentd to start
