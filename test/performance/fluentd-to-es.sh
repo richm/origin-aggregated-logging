@@ -556,6 +556,8 @@ if [ -n "$muxpod" ] ; then
     mcmsave=$ARTIFACT_DIR/m-cm-orig.yaml
     oc get cm/logging-mux -o yaml > $mcmsave
 
+    oc patch -n logging dc/logging-mux --type=json --patch '[
+          {"op":"remove","path":"/spec/template/spec/containers/0/resources/limits/cpu"}]'
     os::log::info Configure mux to enable monitor agent
     os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true )"
     if [ "${USE_MUX_DEBUG:-false}" = true ] ; then
