@@ -556,6 +556,12 @@ if [ -n "$muxpod" ] ; then
     mcmsave=$ARTIFACT_DIR/m-cm-orig.yaml
     oc get cm/logging-mux -o yaml > $mcmsave
 
+    muxcerts=$( oc get daemonset logging-fluentd -o yaml | egrep muxcerts ) || :
+
+    if [ "$muxcerts" = "" ]; then
+        os::log::debug "$( oc set volumes daemonset/logging-fluentd --add --overwrite \
+                           --name=muxcerts --default-mode=0400 -t secret -m /etc/fluent/muxkeys --secret-name logging-mux 2>&1 )"
+    fi
     oc patch -n logging dc/logging-mux --type=json --patch '[
           {"op":"remove","path":"/spec/template/spec/containers/0/resources/limits/cpu"}]'
     os::log::info Configure mux to enable monitor agent
