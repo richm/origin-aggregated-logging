@@ -14,11 +14,11 @@ objects:
       description: "Template for logging fluentd deployment."
       tags: "infrastructure"
     labels:
-      logging-infra: fluentd
+      logging-infra: fluentd-dc
   labels:
-    logging-infra: fluentd
+    logging-infra: fluentd-dc
     provider: openshift
-    component: fluentd
+    component: fluentd-dc
   parameters:
   -
     description: "The image prefix for the Fluentd image to use"
@@ -33,25 +33,17 @@ objects:
     apiVersion: v1
     kind: "DeploymentConfig"
     metadata:
-      name: "logging-fluentd"
+      name: "logging-fluentd-dc"
       labels:
         provider: openshift
-        component: "fluentd"
+        component: "fluentd-dc"
     spec:
       replicas: 0
       selector:
         provider: openshift
-        component: "fluentd"
+        component: "fluentd-dc"
       triggers:
       - type: ConfigChange
-      - type: ImageChange
-        imageChangeParams:
-          automatic: true
-          containerNames:
-          - fluentd-elasticsearch
-          from:
-            kind: ImageStreamTag
-            name: logging-fluentd:${IMAGE_VERSION}
       strategy:
         resources: {}
         rollingParams:
@@ -64,24 +56,19 @@ objects:
           name: fluentd-elasticsearch
           labels:
             provider: openshift
-            component: "fluentd"
+            component: "fluentd-dc"
         spec:
+          serviceAccount: aggregated-logging-fluentd
           serviceAccountName: aggregated-logging-fluentd
           containers:
           - name: fluentd-elasticsearch
             image: ${IMAGE_PREFIX}logging-fluentd:${IMAGE_VERSION}
-            imagePullPolicy: Always
+            imagePullPolicy: IfNotPresent
             securityContext:
               privileged: true
-            resources:
-              limits:
-                cpu: 100m
-            ports:
-              - containerPort: 1095
-                hostPort: 1095
-                protocol: TCP
-                purpose: "to prevent more than one per node"
             volumeMounts:
+            - mountPath: /run/log/journal
+              name: runlogjournal
             - name: varlog
               mountPath: /var/log
             - name: varlibdockercontainers
@@ -93,6 +80,11 @@ objects:
             - name: dockerhostname
               mountPath: /etc/docker-hostname
               readOnly: true
+            - name: muxcerts
+              mountPath: /etc/fluent/muxkeys
+              readOnly: true
+            - mountPath: /var/lib/fluentd
+              name: filebufferstorage
             env:
             - name: "K8S_HOST_URL"
               value: ${MASTER_URL}
@@ -116,7 +108,16 @@ objects:
               value: ${OPS_CLIENT_KEY}
             - name: "OPS_CA"
               value: ${OPS_CA}
+            - name: JSON_FILE_POS_FILE
+              value: "/var/tmp/json.pos"
+            - name: JOURNAL_POS_FILE
+              value: "/var/tmp/journal.pos"
+            - name: MUX_CLIENT_MODE
+              value: "maximal"
           volumes:
+          - hostPath:
+              path: /run/log/journal
+            name: runlogjournal
           - name: varlog
             hostPath:
               path: /var/log
@@ -129,6 +130,11 @@ objects:
           - name: dockerhostname
             hostPath:
               path: /etc/hostname
+          - name: muxcerts
+            secret:
+              secretName: logging-mux
+          - emptyDir: {}
+            name: filebufferstorage
 parameters:
 -
   description: "Internal url for reaching the master API to query pod labels"
