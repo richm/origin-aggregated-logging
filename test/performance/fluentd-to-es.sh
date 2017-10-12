@@ -563,7 +563,7 @@ if [ -n "$muxpod" ] ; then
                            --name=muxcerts --default-mode=0400 -t secret -m /etc/fluent/muxkeys --secret-name logging-mux 2>&1 )"
     fi
     oc patch -n logging dc/logging-mux --type=json --patch '[
-          {"op":"remove","path":"/spec/template/spec/containers/0/resources/limits/cpu"}]'
+          {"op":"remove","path":"/spec/template/spec/containers/0/resources/limits/cpu"}]' || :
     os::log::info Configure mux to enable monitor agent
     os::log::debug "$( oc set env dc/logging-mux ENABLE_MONITOR_AGENT=true )"
     if [ "${USE_MUX_DEBUG:-false}" = true ] ; then
