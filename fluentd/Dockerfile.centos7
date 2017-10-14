@@ -40,16 +40,18 @@ RUN mkdir -p ${HOME} && mkdir -p /etc/fluent/plugin && \
       'fluent-plugin-rewrite-tag-filter:<1.6.0' \
       fluent-plugin-secure-forward \
      'fluent-plugin-systemd:<0.1.0' \
-      fluent-plugin-viaq_data_model \
      'fluent-plugin-remote-syslog:1.1' \
       systemd-journal \
       excon
+
+#      fluent-plugin-viaq_data_model
+
 RUN curl -L -s https://github.com/ViaQ/fluent-plugin-elasticsearch/releases/download/v1.9.5.1/fluent-plugin-elasticsearch-1.9.5.1.gem > ${HOME}/fluent-plugin-elasticsearch-1.9.5.1.gem && \
     cd ${HOME} && \
     gem install -N --conservative --minimal-deps --no-ri --local fluent-plugin-elasticsearch-1.9.5.1.gem
 
 ADD configs.d/ /etc/fluent/configs.d/
-ADD filter_k8s_meta_for_mux_client.rb /etc/fluent/plugin/
+ADD filter_k8s_meta_for_mux_client.rb filter_viaq_data_model.rb filter_viaq_data_model_systemd.rb /etc/fluent/plugin/
 ADD run.sh generate_throttle_configs.rb generate_syslog_config.rb ${HOME}/
 COPY lib/fluent-plugin-viaq_docker_audit_log_parser-${FLUENTD_AUDIT_LOG_PARSER_VERSION}.gem /tmp/
 RUN gem install -N --conservative --minimal-deps --no-ri --no-doc \
