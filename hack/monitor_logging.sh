@@ -26,7 +26,7 @@ function curl_es() {
     local args=( "${@:-}" )
 
     local secret_dir="/etc/elasticsearch/secret/"
-    oc exec -n $LOGPROJ "${pod}" -- curl --silent --insecure "${args[@]}" \
+    oc exec -n $LOGPROJ -c elasticsearch "${pod}" -- curl --silent --insecure "${args[@]}" \
                              --key "${secret_dir}admin-key"   \
                              --cert "${secret_dir}admin-cert" \
                              "https://localhost:9200${endpoint}"
@@ -42,7 +42,7 @@ function curl_es_input() {
     local args=( "${@:-}" )
 
     local secret_dir="/etc/elasticsearch/secret/"
-    oc exec -i "${pod}" -- curl --silent --insecure "${args[@]}" \
+    oc exec -n $LOGPROJ -c elasticsearch -i "${pod}" -- curl --silent --insecure "${args[@]}" \
                                 --key "${secret_dir}admin-key"   \
                                 --cert "${secret_dir}admin-cert" \
                                 "https://localhost:9200${endpoint}"
@@ -56,12 +56,14 @@ function curl_fluentd() {
 # note - this never returns unless the pod dies
 function top_pod() {
     local pod="$1"
-    stdbuf -o 0 oc exec -n $LOGPROJ "${pod}" -- top -b -d 1
+    local containerarg="${2:-}"
+    stdbuf -o 0 oc exec -n $LOGPROJ $containerarg "${pod}" -- top -b -d 1
 }
 
 function top_pod_once() {
     local pod="$1"
-    stdbuf -o 0 oc exec -n $LOGPROJ "${pod}" -- top -b -n 1
+    local containerarg="${2:-}"
+    stdbuf -o 0 oc exec -n $LOGPROJ $containerarg "${pod}" -- top -b -n 1
 }
 
 get_fluentd_monitor_stats() {
@@ -110,7 +112,7 @@ get_all_es_monitor_stats() {
     done & killpids="$killpids $!"
     while true ; do
         if [ -n "$espod" ] ; then
-            top_pod $espod >> $logdir/$espod.top.raw 2>&1 || :
+            top_pod $espod "-c elasticsearch" >> $logdir/$espod.top.raw 2>&1 || :
         fi
         sleep 1
         espod=$( get_es_pod es )
@@ -136,7 +138,7 @@ get_all_es_monitor_stats() {
         done & killpids="$killpids $!"
         while true ; do
             if [ -n "$esopspod" ] ; then
-                top_pod $esopspod >> $logdir/$esopspod.top.raw 2>&1 || :
+                top_pod $esopspod "-c elasticsearch" >> $logdir/$esopspod.top.raw 2>&1 || :
             fi
             sleep 1
             esopspod=$( get_es_pod es-ops )
@@ -226,7 +228,9 @@ cleanup() {
     set +e
     kill $killpids
     for pod in $( oc get -n $LOGPROJ pods -o jsonpath='{.items[*].metadata.name}' ) ; do
-        oc logs -n $LOGPROJ $pod > $logdir/$pod.pod.log
+        for container in $( oc get -n $LOGPROJ pod $pod -o jsonpath='{.spec.containers[*].name}' ) ; do
+            oc logs -n $LOGPROJ -c $container $pod > $logdir/$pod.$container.log
+        done
     done
     exit $result_code
 }
