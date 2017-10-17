@@ -1,140 +1,195 @@
 apiVersion: "v1"
 kind: "Template"
 metadata:
-  name: logging-fluentd-template-maker
+  name: logging-fluentd-template
   annotations:
-    description: "Template to create template for fluentd"
+    description: "Template to create fluentd dc for mux scale testing"
     tags: "infrastructure"
-objects:
-- apiVersion: "v1"
-  kind: "Template"
-  metadata:
-    name: logging-fluentd-template
-    annotations:
-      description: "Template for logging fluentd deployment."
-      tags: "infrastructure"
-    labels:
-      logging-infra: fluentd-dc
   labels:
     logging-infra: fluentd-dc
     provider: openshift
     component: fluentd-dc
-  parameters:
-  -
-    description: "The image prefix for the Fluentd image to use"
-    name: IMAGE_PREFIX
-    value: ${IMAGE_PREFIX_DEFAULT}
-  -
-    description: 'The image version for the Fluentd image to use'
-    name: IMAGE_VERSION
-    value: ${IMAGE_VERSION_DEFAULT}
-  objects:
-  -
-    apiVersion: v1
-    kind: "DeploymentConfig"
-    metadata:
-      name: "logging-fluentd-dc"
-      labels:
-        provider: openshift
-        component: "fluentd-dc"
-    spec:
-      replicas: 0
-      selector:
-        provider: openshift
-        component: "fluentd-dc"
-      triggers:
-      - type: ConfigChange
-      strategy:
-        resources: {}
-        rollingParams:
-          intervalSeconds: 1
-          timeoutSeconds: 600
-          updatePeriodSeconds: 1
-        type: Recreate
-      template:
-        metadata:
-          name: fluentd-elasticsearch
-          labels:
-            provider: openshift
-            component: "fluentd-dc"
-        spec:
-          serviceAccount: aggregated-logging-fluentd
-          serviceAccountName: aggregated-logging-fluentd
-          containers:
-          - name: fluentd-elasticsearch
-            image: ${IMAGE_PREFIX}logging-fluentd:${IMAGE_VERSION}
-            imagePullPolicy: IfNotPresent
-            securityContext:
-              privileged: true
-            volumeMounts:
-            - mountPath: /run/log/journal
-              name: runlogjournal
-            - name: varlog
-              mountPath: /var/log
-            - name: varlibdockercontainers
-              mountPath: /var/lib/docker/containers
-              readOnly: true
-            - name: certs
-              mountPath: /etc/fluent/keys
-              readOnly: true
-            - name: dockerhostname
-              mountPath: /etc/docker-hostname
-              readOnly: true
-            - name: muxcerts
-              mountPath: /etc/fluent/muxkeys
-              readOnly: true
-            - mountPath: /var/lib/fluentd
-              name: filebufferstorage
-            env:
-            - name: "K8S_HOST_URL"
-              value: ${MASTER_URL}
-            - name: "ES_HOST"
-              value: ${ES_HOST}
-            - name: "ES_PORT"
-              value: ${ES_PORT}
-            - name: "ES_CLIENT_CERT"
-              value: ${ES_CLIENT_CERT}
-            - name: "ES_CLIENT_KEY"
-              value: ${ES_CLIENT_KEY}
-            - name: "ES_CA"
-              value: ${ES_CA}
-            - name: "OPS_HOST"
-              value: ${OPS_HOST}
-            - name: "OPS_PORT"
-              value: ${OPS_PORT}
-            - name: "OPS_CLIENT_CERT"
-              value: ${OPS_CLIENT_CERT}
-            - name: "OPS_CLIENT_KEY"
-              value: ${OPS_CLIENT_KEY}
-            - name: "OPS_CA"
-              value: ${OPS_CA}
-            - name: JSON_FILE_POS_FILE
-              value: "/var/tmp/json.pos"
-            - name: JOURNAL_POS_FILE
-              value: "/var/tmp/journal.pos"
-            - name: MUX_CLIENT_MODE
-              value: "maximal"
-          volumes:
-          - hostPath:
-              path: /run/log/journal
+objects:
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: logging-fluentd-dc
+  data:
+    fluent.conf: |
+      # This file is the fluentd configuration entrypoint. Edit with care.
+
+      @include configs.d/openshift/system.conf
+
+      # In each section below, pre- and post- includes don't include anything initially;
+      # they exist to enable future additions to openshift conf as needed.
+
+      ## sources
+      ## ordered so that syslog always runs last...
+      @include configs.d/openshift/input-pre-*.conf
+      @include configs.d/dynamic/input-docker-*.conf
+      @include configs.d/dynamic/input-syslog-*.conf
+      @include configs.d/openshift/input-post-*.conf
+      ##
+
+      <label @INGRESS>
+      ## filters
+        @include configs.d/openshift/filter-pre-*.conf
+        @include configs.d/openshift/filter-retag-journal.conf  
+        @include configs.d/openshift/filter-k8s-meta.conf
+        @include configs.d/openshift/filter-kibana-transform.conf
+        @include configs.d/openshift/filter-k8s-flatten-hash.conf
+        @include configs.d/openshift/filter-k8s-record-transform.conf
+        @include configs.d/openshift/filter-syslog-record-transform.conf
+        @include configs.d/openshift/filter-viaq-data-model.conf
+        @include configs.d/openshift/filter-post-*.conf
+      ##
+      </label>
+
+      <label @OUTPUT>
+      ## matches
+        @include configs.d/openshift/output-pre-*.conf
+        @include configs.d/openshift/output-operations.conf
+        @include configs.d/openshift/output-applications.conf
+        # no post - applications.conf matches everything left
+      ##
+      </label>
+    secure-forward.conf: |
+      # @type secure_forward
+
+      # self_hostname ${HOSTNAME}
+      # shared_key <SECRET_STRING>
+
+      # secure yes
+      # enable_strict_verification yes
+
+      # ca_cert_path /etc/fluent/keys/your_ca_cert
+      # ca_private_key_path /etc/fluent/keys/your_private_key
+        # for private CA secret key
+      # ca_private_key_passphrase passphrase
+
+      # <server>
+        # or IP
+      #   host server.fqdn.example.com
+      #   port 24284
+      # </server>
+      # <server>
+        # ip address to connect
+      #   host 203.0.113.8
+        # specify hostlabel for FQDN verification if ipaddress is used for host
+      #   hostlabel server.fqdn.example.com
+      # </server>
+- apiVersion: v1
+  kind: "DeploymentConfig"
+  metadata:
+    name: "logging-fluentd-dc"
+    labels:
+      provider: openshift
+      component: "fluentd-dc"
+  spec:
+    replicas: 0
+    selector:
+      provider: openshift
+      component: "fluentd-dc"
+    triggers:
+    - type: ConfigChange
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Recreate
+    template:
+      metadata:
+        name: fluentd-dc
+        labels:
+          provider: openshift
+          component: "fluentd-dc"
+      spec:
+        serviceAccount: aggregated-logging-fluentd
+        serviceAccountName: aggregated-logging-fluentd
+        containers:
+        - name: fluentd-dc
+          image: ${IMAGE_PREFIX}logging-fluentd:${IMAGE_VERSION}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - mountPath: /run/log/journal
             name: runlogjournal
           - name: varlog
-            hostPath:
-              path: /var/log
+            mountPath: /var/log
           - name: varlibdockercontainers
-            hostPath:
-              path: /var/lib/docker/containers
+            mountPath: /var/lib/docker/containers
+            readOnly: true
           - name: certs
-            secret:
-              secretName: logging-fluentd
+            mountPath: /etc/fluent/keys
+            readOnly: true
           - name: dockerhostname
-            hostPath:
-              path: /etc/hostname
+            mountPath: /etc/docker-hostname
+            readOnly: true
           - name: muxcerts
-            secret:
-              secretName: logging-mux
-          - emptyDir: {}
+            mountPath: /etc/fluent/muxkeys
+            readOnly: true
+          - mountPath: /var/lib/fluentd
             name: filebufferstorage
+          - mountPath: /etc/fluent/configs.d/user
+            name: config
+            readOnly: true
+          env:
+          - name: "K8S_HOST_URL"
+            value: ${MASTER_URL}
+          - name: "ES_HOST"
+            value: ${ES_HOST}
+          - name: "ES_PORT"
+            value: ${ES_PORT}
+          - name: "ES_CLIENT_CERT"
+            value: ${ES_CLIENT_CERT}
+          - name: "ES_CLIENT_KEY"
+            value: ${ES_CLIENT_KEY}
+          - name: "ES_CA"
+            value: ${ES_CA}
+          - name: "OPS_HOST"
+            value: ${OPS_HOST}
+          - name: "OPS_PORT"
+            value: ${OPS_PORT}
+          - name: "OPS_CLIENT_CERT"
+            value: ${OPS_CLIENT_CERT}
+          - name: "OPS_CLIENT_KEY"
+            value: ${OPS_CLIENT_KEY}
+          - name: "OPS_CA"
+            value: ${OPS_CA}
+          - name: JSON_FILE_POS_FILE
+            value: "/var/tmp/json.pos"
+          - name: JOURNAL_POS_FILE
+            value: "/var/tmp/journal.pos"
+          - name: MUX_CLIENT_MODE
+            value: "maximal"
+        volumes:
+        - hostPath:
+            path: /run/log/journal
+          name: runlogjournal
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: certs
+          secret:
+            secretName: logging-fluentd
+        - name: dockerhostname
+          hostPath:
+            path: /etc/hostname
+        - name: muxcerts
+          secret:
+            secretName: logging-mux
+        - emptyDir: {}
+          name: filebufferstorage
+        - configMap:
+            defaultMode: 420
+            name: logging-fluentd-dc
+          name: config
 parameters:
 -
   description: "Internal url for reaching the master API to query pod labels"
