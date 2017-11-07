@@ -10,6 +10,17 @@ popd
 source "$(dirname "${BASH_SOURCE[0]}" )/../../hack/lib/init.sh"
 source "${OS_O_A_L_DIR}/hack/testing/util.sh"
 os::util::environment::use_sudo
+# if true, use the journal for system messages/.operations
+# if false, use /var/log/messages
+USE_JOURNAL_FOR_SYSTEM=${USE_JOURNAL_FOR_SYSTEM:-true}
+# if true, use the journal for container messages
+# if false, use json file
+USE_JOURNAL_FOR_CONTAINERS=${USE_JOURNAL_FOR_CONTAINERS:-false}
+if [ $USE_JOURNAL_FOR_SYSTEM = true -o $USE_JOURNAL_FOR_CONTAINERS = true ] ; then
+    USE_JOURNAL=true
+else
+    USE_JOURNAL=false
+fi
 
 os::test::junit::declare_suite_start "test/perf-fluent-to-es"
 
@@ -207,7 +218,8 @@ process_stats() {
 Test Duration      : $duration seconds
 Start              : $startts
 End                : $endts
-Number of records  : $NMESSAGES
+Operations records : $NMESSAGES_OPS
+Records per project: $NMESSAGES_PROJ
 Number of projects : $NPROJECTS
 Message size       : $MSGSIZE bytes
 EOF
@@ -235,33 +247,65 @@ if [ "${1:-}" = process_stats ] ; then
     exit 0
 fi
 
+format_json_file() {
+    local full=$1
+    local nrecs=$2
+    local prefix=$3
+    local msgsize=$4
+    local startts=$( date -u +%s%N )
+    python -c 'import sys
+from datetime import datetime
+full = sys.argv[1]
+nrecs = int(sys.argv[2])
+width = len(sys.argv[2])
+prefix = sys.argv[3]
+msgsize = int(sys.argv[4])
+tsstr = sys.argv[5]
+ts = int(tsstr)
+
+if full == "full":
+  template = "{{{{\"log\":\"{prefix}-{{ii:0{width}d}} {{ii:0{msgsize}d}}\\n\",\"stream\":\"stdout\",\"time\":\"{{ts}}\",\"ident\":\"{prefix}\"}}}}\n".format(prefix=prefix, width=width, msgsize=msgsize)
+else:
+  template = "{prefix}-{{ii:0{width}d}} {{ii:0{msgsize}d}}\n".format(prefix=prefix, width=width, msgsize=msgsize)
+for ii in xrange(1, nrecs + 1):
+  tsstr = datetime.utcfromtimestamp(ts/1000000000.0).isoformat() + "000Z"
+  sys.stdout.write(template.format(ts=tsstr, ii=ii))
+  ts = ts + 1000
+' $full $nrecs $prefix $msgsize $startts
+}
+
 # create a journal which has N records - output is journalctl -o export format
 # suitable for piping into systemd-journal-remote
 # if nproj is given, also create N records per project
 format_journal() {
-    local nrecs=$1
-    local prefix=$2
-    local msgsize=$3
-    local useops=$4
+    local nrecs_ops=$1
+    local nrecs_proj=$2
+    local prefix=$3
+    local msgsize=$4
+    local needops=$5
+    local needapps=$6
     local hn=$( hostname -s )
     local startts=$( date -u +%s%6N )
     python -c 'import sys
-nrecs = int(sys.argv[1])
-width = len(sys.argv[1])
-prefix = sys.argv[2]
-msgsize = int(sys.argv[3])
-useops = sys.argv[4].lower() == "true"
-hn = sys.argv[5]
-tsstr = sys.argv[6]
+nrecs_ops = int(sys.argv[1])
+nrecs_proj = int(sys.argv[2])
+width_ops = len(sys.argv[1])
+width_proj = len(sys.argv[2])
+prefix = sys.argv[3]
+msgsize = int(sys.argv[4])
+needops = sys.argv[5].lower() == "true"
+needapps = sys.argv[6].lower() == "true"
+hn = sys.argv[7]
+tsstr = sys.argv[8]
 ts = int(tsstr)
-pid = sys.argv[7]
-if len(sys.argv) > 8:
-  nproj = int(sys.argv[8])
-  projwidth = len(sys.argv[8])
-  contprefix = sys.argv[9]
-  podprefix = sys.argv[10]
-  projprefix = sys.argv[11]
-  poduuid = sys.argv[12]
+pid = sys.argv[9]
+if len(sys.argv) > 10:
+  nproj = int(sys.argv[10])
+  projwidth = len(sys.argv[10])
+  contprefix = sys.argv[11]
+  podprefix = sys.argv[12]
+  projprefix = sys.argv[13]
+  poduuid = sys.argv[14]
   contfields = """CONTAINER_NAME=k8s_{contprefix}{{jj:0{projwidth}d}}.deadbeef_{podprefix}{{jj:0{projwidth}d}}_{projprefix}{{jj:0{projwidth}d}}_{poduuid}_abcdef01
 CONTAINER_ID={xx}
 CONTAINER_ID_FULL={yy}
@@ -282,9 +326,7 @@ _COMM={prefix}
 _PID={pid}
 _TRANSPORT=stderr
 PRIORITY=3
-UNKNOWN1=1
-UNKNOWN2=2
-""".format(prefix=prefix, hn=hn, width=width, pid=pid,contfields=contfields)
+""".format(prefix=prefix, hn=hn, width=width, pid=pid, contfields=contfields)
 
 padlen = msgsize - (len(template) + 2*len(tsstr) + len(prefix) + width + 1 + 1)
 template = template + """MESSAGE={prefix}-{{ii:0{width}d}} {msg:0{padlen}d}
@@ -293,13 +335,14 @@ template = template + """MESSAGE={prefix}-{{ii:0{width}d}} {msg:0{padlen}d}
 conttemplate = template + contfields
 
 for ii in xrange(1, nrecs + 1):
-  if useops:
+  if needops:
     sys.stdout.write(template.format(ts=ts, ii=ii) + "\n")
     ts = ts + 1
-  for jj in xrange(1, nproj + 1):
-    sys.stdout.write(conttemplate.format(ts=ts, ii=ii, jj=jj) + "\n")
-    ts = ts + 1
-' $nrecs $prefix $msgsize $useops $hn $startts $$ ${NPROJECTS:-0} ${contprefix:-""} ${podprefix:-""} ${projprefix:-""} $( uuidgen )
+  if needapps:
+    for jj in xrange(1, nproj + 1):
+      sys.stdout.write(conttemplate.format(ts=ts, ii=ii, jj=jj) + "\n")
+      ts = ts + 1
+' $nrecs_ops $nrecs_proj $prefix $msgsize $USE_JOURNAL_FOR_SYSTEM $USE_JOURNAL_FOR_CONTAINERS $hn $startts $$ ${NPROJECTS:-0} ${contprefix:-""} ${podprefix:-""} ${projprefix:-""} $( uuidgen )
 }
 
 format_external_project() {
@@ -328,7 +371,7 @@ for ii in xrange(1, nrecs + 1):
 ' $nrecs $prefix $msgsize $hn $startts
 }
 
-format_json-file_filename() {
+format_json_filename() {
     # $1 - $ii
     printf "%s${NPFMT}_%s${NPFMT}_%s${NPFMT}-%s.log\n" "$podprefix" $1 "$projprefix" $1 "$contprefix" $1 "`echo $1 | sha256sum | awk '{print $1}'`"
 }
@@ -351,9 +394,6 @@ get_journal_container_name() {
 create_test_log_files() {
     ii=1
     prefix=$( uuidgen )
-    # need $MSGSIZE - (36 + "-" + $NSIZE + " ") bytes
-    n=$( expr $MSGSIZE - 36 - 1 - $NSIZE - 1 )
-    EXTRAFMT=${EXTRAFMT:-"%0${n}d"}
     if [ "${USE_JOURNAL:-true}" = "true" ] ; then
         formatter=format_journal
         if [ "${USE_CONTAINER_FOR_JOURNAL_FORMAT:-}" = true ] ; then
@@ -362,7 +402,9 @@ create_test_log_files() {
             }
             postprocesssystemlog() {
                 docker build -t viaq/journal-maker:latest journal-maker
-                docker run --privileged -u 0 -e INPUTFILE=/var/log/journalinput.txt -e OUTPUTFILE=/var/log/journal/messages.journal -v $datadir:/var/log viaq/journal-maker:latest
+                docker run --privileged -u 0 -e INPUTFILE=/var/log/journalinput.txt \
+                    -e OUTPUTFILE=/var/log/journal/messages.journal \
+                    -v $datadir:/var/log viaq/journal-maker:latest
                 sudo chown -R ${USER}:${USER} $datadir/journal
             }
         else
@@ -373,7 +415,8 @@ create_test_log_files() {
                 :
             }
         fi
-    else
+    fi
+    if [ $USE_JOURNAL_FOR_SYSTEM = false ] ; then
         formatter=format_syslog_message
         sysfilter() {
             cat >> $systemlog
@@ -382,25 +425,19 @@ create_test_log_files() {
             :
         }
     fi
+    $formatter $NMESSAGES_OPS $NMESSAGES_PROJ $prefix $MSGSIZE $USE_JOURNAL_FOR_SYSTEM $USE_JOURNAL_FOR_CONTAINERS | sysfilter
+    postprocesssystemlog
 
-    if [ ${USE_OPS:-true} = true -o ${USE_JOURNAL_FOR_CONTAINERS:-true} = true ] ; then
-        $formatter $NMESSAGES $prefix $MSGSIZE ${USE_OPS:-true} | sysfilter
-        postprocesssystemlog
-    fi
-    if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-        while [ $ii -le $NMESSAGES ] ; do
-            jj=1
-            while [ $jj -le $NPROJECTS ] ; do
-                if [ ${USE_JOURNAL_FOR_CONTAINERS:-true} = false ] ; then
-                    fn=$( format_json-file_filename $jj )
-                    format_json_message full "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $datadir/docker/$fn
-                    format_json_message short "$NFMT" "$EXTRAFMT" "$prefix" "$ii" >> $orig
-                fi
-                jj=`expr $jj + 1`
-            done
-            ii=`expr $ii + 1`
+    if [ $USE_JOURNAL_FOR_CONTAINERS = false ] ; then
+        jj=1
+        while [ $jj -le $NPROJECTS ] ; do
+            fn=$( format_json_filename $jj )
+            format_json_file full $NMESSAGES_PROJ $prefix $MSGSIZE > $datadir/containers/$fn
+            format_json_file short $NMESSAGES_PROJ $prefix $MSGSIZE >> $orig
+            jj=$( expr $jj + 1 )
         done
     fi
+
     if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
         if [ ! -d $datadir/project ] ; then
             mkdir -p $datadir/project
@@ -408,7 +445,7 @@ create_test_log_files() {
         ii=1
         while [ $ii -le ${NPROJECTS:-0} ] ; do
             fn=$( format_external_project_filename $ii )
-            format_external_project $NMESSAGES $prefix $MSGSIZE > $datadir/project/$fn
+            format_external_project $NMESSAGES_PROJ $prefix $MSGSIZE > $datadir/project/$fn
             ii=$( expr $ii + 1 )
         done
     fi
@@ -420,7 +457,7 @@ cleanup() {
     endts=${endts:-$( date +%s )}
     kill $monitor_pids
     oc logs $fpod > $ARTIFACT_DIR/$fpod.log
-    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES=$NMESSAGES; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
+    { echo startts=$startts; echo endts=$endts;  echo NMESSAGES_OPS=$NMESSAGES_OPS; echo NMESSAGES_PROJ=$NMESSAGES_PROJ; echo MSGSIZE=$MSGSIZE ; echo NPROJECTS=${NPROJECTS:-0}; } > $ARTIFACT_DIR/run_info
     process_stats
     if [ -n "$workdir" -a -d "$workdir" ] ; then
         rm -rf $workdir
@@ -494,16 +531,14 @@ contprefix="this-is-container-"
 # for the seq -f argument
 PROJ_FMT="${projprefix}%0${NPSIZE}.f"
 
-# create operations index/data
-USE_OPS=${USE_OPS:-true}
 # number of messages per project
 NMESSAGES=${NMESSAGES:-300000}
-# max number of digits in $NMESSAGES
-NSIZE=$( printf $NMESSAGES | wc -c )
-# printf format for message number
-NFMT=${NFMT:-"%0${NSIZE}d"}
-# total size of a record
-MSGSIZE=${MSGSIZE:-599}
+# number of messages for .operations - set to 0 to skip operations messages
+NMESSAGES_OPS=${NMESSAGES_OPS:-$NMESSAGES}
+# number of messages per project - set to 0 to skip project messages
+NMESSAGES_PROJ=${NMESSAGES_PROJ:-$NMESSAGES}
+# total size of a record in bytes
+MSGSIZE=${MSGSIZE:-600}
 
 # set env DEBUG=true on mux pod - dump in pod to /var/log/fluentd.log
 USE_MUX_DEBUG=${USE_MUX_DEBUG:-false}
@@ -600,8 +635,7 @@ os::cmd::try_until_text "oc get pods -l component=fluentd" "^logging-fluentd-.* 
 
 ARTIFACT_DIR=$ARTIFACT_DIR $scriptdir/monitor_logging.sh > $ARTIFACT_DIR/monitor_logging.out 2>&1 & monitor_pids=$!
 
-# e.g. 100000 messages == 666 second wait time
-max_wait_time=$( expr \( $NMESSAGES \* \( $NPROJECTS + 1 \) \) / 150 )
+max_wait_time=$( expr \( $NMESSAGES_OPS + $NMESSAGES_PROJ \* \( $NPROJECTS \) \) / 100 )
 
 startts=$( date +%s )
 fpod=$( get_running_pod fluentd )
@@ -610,11 +644,11 @@ muxpod=$( get_running_pod mux )
 os::log::info Running tests . . . ARTIFACT_DIR $ARTIFACT_DIR
 # measure how long it takes - wait until last record is in ES or we time out
 qs='{"query":{"term":{"systemd.u.SYSLOG_IDENTIFIER":"'"${prefix}"'"}}}'
-if [ $USE_OPS = true ] ; then
-    os::cmd::try_until_text "curl_es ${esopspod} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
+if [ $NMESSAGES_OPS -gt 0 ] ; then
+    os::cmd::try_until_text "curl_es ${esopspod} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES_OPS} $(( max_wait_time * second ))
 fi
 for proj in $( seq -f "$PROJ_FMT" $NPROJECTS ) ; do
-    os::cmd::try_until_text "curl_es ${espod} /project.${proj}.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES} $(( max_wait_time * second ))
+    os::cmd::try_until_text "curl_es ${espod} /project.${proj}.*/_count -X POST -d '$qs' | get_count_from_json" ${NMESSAGES_PROJ} $(( max_wait_time * second ))
 done
 endts=$( date +%s )
 os::log::info Test run took $( expr $endts - $startts ) seconds
