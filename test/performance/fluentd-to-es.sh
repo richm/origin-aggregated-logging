@@ -609,8 +609,14 @@ if [ -n "$muxpod" ] ; then
 fi
 # configure fluentd to use $datadir/journal:/journal/journal as its journal source
 os::log::debug "$( oc set volume daemonset/logging-fluentd --add -t hostPath --name testjournal -m /journal --path $datadir )"
-os::log::debug "$( oc set env daemonset/logging-fluentd JSON_FILE_PATH="/journal/*.log" JSON_FILE_POS_FILE=/journal/es-containers.log.pos JOURNAL_SOURCE=/journal/journal JOURNAL_READ_FROM_HEAD=true ENABLE_MONITOR_AGENT=true )"
+os::log::debug "$( oc set env daemonset/logging-fluentd JOURNAL_SOURCE=/journal/journal JOURNAL_READ_FROM_HEAD=true ENABLE_MONITOR_AGENT=true )"
 sudo mv /var/log/journal.pos /var/log/journal.pos.save
+if [ "${USE_JOURNAL_FOR_CONTAINERS:-false}" = false ] ; then
+    # configure fluentd to read from $datadir/containers/*.log as /var/log/containers/*.log
+    os::log::debug "$( oc set volume daemonset/logging-fluentd --add -t hostPath --name testcontainers -m /var/log/containers --path $datadir/containers )"
+else
+    os::log::debug "$( oc set env daemonset/logging-fluentd JSON_FILE_PATH="/journal/*.log" JSON_FILE_POS_FILE=/journal/es-containers.log.pos )"
+fi
 if [ "${USE_EXTERNAL_PROJECTS:-false}" = true ] ; then
     # configure fluentd to read from $datadir/project/*.log
     os::log::debug "$( oc set volume daemonset/logging-fluentd --add -t hostPath --name testexternal -m /project --path $datadir/project )"
@@ -635,7 +641,7 @@ os::cmd::try_until_text "oc get pods -l component=fluentd" "^logging-fluentd-.* 
 
 ARTIFACT_DIR=$ARTIFACT_DIR $scriptdir/monitor_logging.sh > $ARTIFACT_DIR/monitor_logging.out 2>&1 & monitor_pids=$!
 
-max_wait_time=$( expr \( $NMESSAGES_OPS + $NMESSAGES_PROJ \* \( $NPROJECTS \) \) / 100 )
+max_wait_time=$( expr \( $NMESSAGES_OPS + \( $NMESSAGES_PROJ \* $NPROJECTS \) \) / 100 )
 
 startts=$( date +%s )
 fpod=$( get_running_pod fluentd )
