@@ -153,6 +153,19 @@ bulk_reject_url=$( get_bulk_thread_pool_url $es_ver "" r )
 os::cmd::try_until_not_text "curl_es $esopspod ${bulk_reject_url}" "^0\$"
 start_bulk_rejections=$( curl_es $esopspod ${bulk_reject_url} )
 
+# restart fluentd to make sure the logs are clear
+os::cmd::try_until_text "oc get pods -l component=fluentd" "^logging-fluentd-.* Running "
+fpod=$( get_running_pod fluentd )
+oc delete pod --force $fpod
+os::cmd::try_until_failure "oc get pod $fpod"
+sleep 1
+os::cmd::try_until_text "oc get pods -l component=fluentd" "^logging-fluentd-.* Running "
+fpod=$( get_running_pod fluentd )
+
+# wait for BulkIndexQueueFull errors in fluentd log
+flog=/var/log/fluentd.log
+#os::cmd::try_until_success "grep -q BulkIndexQueueFull /var/log/fluentd.log" $(( 300 * second ))
+
 # write some messages
 uuid_es_ops=$( openssl rand -hex 64 )
 countops=500
@@ -220,6 +233,11 @@ while read datestr timestr tz logline ; do
         fi
     fi
 done < /var/log/fluentd.log
+
+# if [ -z "${found:-}" ] ; then
+#     os::log::error There were no bulk index errors recorded by fluentd during the test run between $( date --date=@$starttime ) and $( date --date=@$endtime )
+#     exit 1
+# fi
 
 os::log::info There were $founderr bulk index errors and $foundsuc successful retries recorded by fluentd during the test run between $( date --date=@$starttime ) and $( date --date=@$endtime )
 
