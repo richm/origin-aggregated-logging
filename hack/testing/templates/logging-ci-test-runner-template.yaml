@@ -39,6 +39,9 @@ objects:
         # variable evaluation
         export ARTIFACT_DIR=${ARTIFACT_DIR}
         set -u
+        if [ "${SETUP_ONLY}" = true ] ; then
+          sleep 54321
+        fi
         . openshift/ci-operator/build-image/launch-e2e-test.sh
 
       volumeMounts:
@@ -128,5 +131,8 @@ parameters:
 - description: the directory where to write the test artifacts
   value: ''
   name: ARTIFACT_DIR
+- description: do not launch tests - just sleep until killed by user - allows user to oc rsh to pod
+  value: "false"
+  name: SETUP_ONLY
 labels:
   test: "true"
