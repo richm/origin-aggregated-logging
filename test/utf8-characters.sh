@@ -34,15 +34,20 @@ os::log::info "Starting utf8-characters test at $( date )"
 wait_for_fluentd_ready
 
 message_uuid="$( uuidgen | sed 's/[-]//g' )"
-message="$(printf '%s-\xC2\xB5' "$message_uuid" )"
-logger -p local6.info -t "$message_uuid" "$message"
+apps_message="$(printf '%s-\xC2\xB5' "$message_uuid" )"
+message_uuid="$( uuidgen | sed 's/[-]//g' )"
+ops_message="$(printf '%s-\xC2\xB5' "$message_uuid" )"
 
-es_ops_svc="$( get_es_svc es-ops )"
-if [ -z "$es_ops_svc" ] ; then
-    es_ops_svc="$( get_es_svc es )"
-fi
-qs='{"query":{"term":{"systemd.u.SYSLOG_IDENTIFIER":"'"${message_uuid}"'"}}}'
-os::cmd::try_until_text "curl_es ${es_ops_svc} /.operations.*/_count -X POST -d '$qs' | get_count_from_json" 1 $(( 300 * second ))
+get_apps_record() {
+    notused=$1
+    cp $2 $ARTIFACT_DIR/apps_record.json
+}
+get_ops_record() {
+    notused=$1
+    cp $2 $ARTIFACT_DIR/ops_record.json
+}
+APPS_MESSAGE="$es_message" OPS_MESSAGE="$es_ops_message" wait_for_fluentd_to_catch_up get_apps_record get_ops_record
+
 os::log::info "Checking that message was successfully processed..."
-os::cmd::expect_success "curl_es $es_ops_svc /.operations.*/_search -X POST -d '$qs' | \
-                         python $OS_O_A_L_DIR/hack/testing/test-utf8-characters.py '$message' $message_uuid"
+os::cmd::expect_success "cat $ARTIFACT_DIR/ops_record.json | \
+                         python $OS_O_A_L_DIR/hack/testing/test-utf8-characters.py '$ops_message' '$ops_message'"

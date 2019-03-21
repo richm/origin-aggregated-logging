@@ -1,7 +1,7 @@
 import sys
 import json
 
-obj = json.loads(sys.stdin.read())
+obj = json.load(sys.stdin)
 
 message_uuid = sys.argv[1]
 message = sys.argv[2]

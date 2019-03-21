@@ -297,8 +297,8 @@ function wait_for_fluentd_to_catch_up() {
     local es_svc=$( get_es_svc es )
     local es_ops_svc=$( get_es_svc es-ops )
     es_ops_svc=${es_ops_svc:-$es_svc}
-    local uuid_es=$( uuidgen | sed 's/[-]//g' )
-    local uuid_es_ops=$( uuidgen | sed 's/[-]//g' )
+    local uuid_es=${APPS_MESSAGE:-$( uuidgen | sed 's/[-]//g' )}
+    local uuid_es_ops=${OPS_MESSAGE:-$( uuidgen | sed 's/[-]//g' )}
     local expected=${3:-1}
     local timeout=${TIMEOUT:-600}
     local appsproject=${4:-$LOGGING_NS}
