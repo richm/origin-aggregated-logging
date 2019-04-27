@@ -1,0 +1,20 @@
+parameters:
+  flavor: m1.large
+  key: rmeggins-pubkey
+  public_network: external
+  image: centos-7-cloud
+  run_stack_name: origin-15.rmeggins.test
+  oshift_hostname: ocp.origin-15.rmeggins.test
+  kibana_hostname: kibana.origin-15.rmeggins.test
+  kibana_ops_hostname: kibana-ops.origin-15.rmeggins.test
+  es_hostname: es.origin-15.rmeggins.test
+  es_ops_hostname: es-ops.origin-15.rmeggins.test
+  run_stack_file: heat-origin-ansible-1.x.yaml
+  variant: origin
+  variant_version: 1.5
+  openshift_release: v1.5
+  logging_image_version: v1.5.1
+  logging_image_prefix: docker.io/openshift/origin-
+#  openshift_ansible_repo: openshift
+#  openshift_ansible_branch: release-1.5
+  use_15: 1

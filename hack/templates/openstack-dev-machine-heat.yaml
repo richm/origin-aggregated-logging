@@ -1,0 +1,195 @@
+heat_template_version: 2016-10-14
+
+description: This template creates a Fedora dev machine for logging
+
+parameters:
+  oshift_hostname:
+    type: string
+    label: OpenShift hostname
+    description: FQDN for OpenShift node
+    default: myusername.oal.test
+  image:
+    type: string
+    label: Image name or ID
+    description: Image to be used for the server.
+    default: "Fedora 29"
+  flavor:
+    type: string
+    label: Flavor
+    description: Type of instance (flavor) to be used on the compute instance.
+    default: m1.medium
+  key:
+    type: string
+    label: Key name
+    description: Name of key-pair to be installed on the compute instance.
+    default: myusername-pubkey
+  public_network:
+    type: string
+    label: Public network name or ID
+    description: Public network with floating IP addresses.
+    default: "10.8.240.0"
+  run_stack_file:
+    type: string
+    label: name of stack file containing the stack used to run the test instances
+    description: name of stack file containing the stack used to run the test instances
+    default: heat-origin-1.x.yaml
+  run_stack_name:
+    type: string
+    label: name of stack used to run the tests
+    description: name of stack used to produce the image
+    default: username.oal.test
+resources:
+  oshift_boot_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        cloud_config_modules:
+          - timezone
+          - runcmd
+          - bootcmd
+          - package_update_upgrade_install
+        system_info:
+          default_user:
+            name: fedora
+            plain_text_passwd: password
+            lock_passwd: False
+            sudo: ALL=(ALL) NOPASSWD:ALL
+        password: password
+        chpasswd: {expire: False}
+        ssh_pwauth: True
+        package_upgrade: true
+        packages:
+          - bc
+          - sysstat
+          - strace
+          - git
+          - wget
+          - screen
+          - docker
+          - java-headless
+          - golang
+          - iptables-services
+          - NetworkManager
+          - origin-clients
+          - skopeo
+          - podman
+        write_files:
+          - path: /etc/sudoers.d/999-cloud-init-requiretty
+            owner: root:root
+            permissions: '0440'
+            content: |
+              Defaults !requiretty
+          - path: /root/setup-for-dev.sh
+            owner: root:root
+            permissions: '0750'
+            content: |
+              #!/bin/bash
+              user=fedora
+              home=/home/$user
+              cd /home/$user
+              echo 'GOPATH=$HOME/go' >> .bashrc
+              echo 'export GOPATH' >> .bashrc
+              echo 'PATH="$GOPATH/bin:$HOME/.local/bin:$HOME/bin:$PATH"' >> .bashrc
+              echo 'export PATH' >> .bashrc
+              echo 'alias ll="ls -alrtF --color=auto"' >> .bashrc
+              echo 'alias p=pushd' >> .bashrc
+              echo 'echo copy over your .kube/config' >> .bashrc
+              echo 'echo use ssh -A - use env to list SSH env vars' >> .bashrc
+              mkdir -p $home/go/bin
+              mkdir -p $home/go/src/github.com/openshift
+              cd $home/go/src/github.com/openshift
+              git clone https://github.com/openshift/origin-aggregated-logging --recurse-submodules
+              git clone https://github.com/openshift/elasticsearch-operator --recurse-submodules
+              git clone https://github.com/openshift/cluster-logging-operator --recurse-submodules
+              git clone https://github.com/openshift/release --recurse-submodules
+              cd $home
+              GOPATH=$home/go go get -u github.com/openshift/imagebuilder/cmd/imagebuilder
+              chown -R fedora .
+              groupadd docker || :
+              chgrp docker /run/docker.sock
+              usermod -aG docker $user
+        runcmd:
+          - [ hostname, { get_param: oshift_hostname } ]
+          - [ systemctl, daemon-reload ]
+          - [ systemctl, start, NetworkManager ]
+          - [ systemctl, enable, docker ]
+          - [ systemctl, start, docker ]
+          - [ /root/setup-for-dev.sh ]
+  oshift_dev_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: for logging dev
+      name: logging-dev-secgroup
+      rules:
+        - protocol: icmp
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+        - protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+        - protocol: tcp
+          port_range_min: 443
+          port_range_max: 443
+
+  private_network:
+    type: OS::Neutron::Net
+
+  private_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: private_network }
+      cidr: 192.168.78.0/24
+
+  router:
+    type: OS::Neutron::Router
+    properties:
+      external_gateway_info:
+        network: { get_param: public_network }
+
+  router-interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router }
+      subnet: { get_resource: private_subnet }
+
+  oshift_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: private_network }
+      security_groups:
+        - { get_resource: oshift_dev_security_group }
+
+  oshift_instance:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: oshift_hostname }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: oshift_port }
+      user_data_format: RAW
+      user_data: { get_resource: oshift_boot_config }
+
+  floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: { get_param: public_network }
+
+  floating_ip_assoc:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_resource: floating_ip }
+      port_id: { get_resource: oshift_port }
+
+outputs:
+  instance_name:
+    description: Name of the instance
+    value: { get_attr: [oshift_instance, name] }
+  instance_ip:
+    description: The IP address of the deployed instance
+    value: { get_attr: [floating_ip, floating_ip_address] }
+  private_instance_ip:
+    description: The private IP address of the deployed instance
+    value: { get_attr: [oshift_port, fixed_ips, 0, ip_address] }
