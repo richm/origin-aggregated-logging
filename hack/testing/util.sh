@@ -23,10 +23,12 @@ if [ $(id -u) = 0 ] ; then
     # when running as root in a container, sudo hammers the journal and audit
     # logs with a bunch of noise that we don't care about
     oal_sudo() {
+        set -x
         case "$1" in
         \-[A-Za-z]) shift ;;
         esac
         "$@"
+        set +x
     }
 else
     oal_sudo() { sudo "$@" ; }
