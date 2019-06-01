@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-if [ -n "$OPENRC" ] ; then
+if [ -n "${OPENRC:-}" ] ; then
     . $OPENRC
 fi
 

@@ -17,7 +17,7 @@ parameters:
     type: string
     label: Flavor
     description: Type of instance (flavor) to be used on the compute instance.
-    default: m1.medium
+    default: m1.large
   key:
     type: string
     label: Key name
@@ -27,7 +27,7 @@ parameters:
     type: string
     label: Public network name or ID
     description: Public network with floating IP addresses.
-    default: "10.8.240.0"
+    default: "provider_net_shared"
   run_stack_file:
     type: string
     label: name of stack file containing the stack used to run the test instances
@@ -93,8 +93,9 @@ resources:
               echo 'export PATH' >> .bashrc
               echo 'alias ll="ls -alrtF --color=auto"' >> .bashrc
               echo 'alias p=pushd' >> .bashrc
-              echo 'echo copy over your .kube/config' >> .bashrc
-              echo 'echo use ssh -A - use env to list SSH env vars' >> .bashrc
+              # this somehow messes up scp . . .
+              echo '#echo copy over your .kube/config' >> .bashrc
+              echo '#echo use ssh -A - use env to list SSH env vars' >> .bashrc
               mkdir -p $home/go/bin
               mkdir -p $home/go/src/github.com/openshift
               cd $home/go/src/github.com/openshift
@@ -131,34 +132,12 @@ resources:
         - protocol: tcp
           port_range_min: 443
           port_range_max: 443
-
-  private_network:
-    type: OS::Neutron::Net
-
-  private_subnet:
-    type: OS::Neutron::Subnet
-    properties:
-      network_id: { get_resource: private_network }
-      cidr: 192.168.78.0/24
-
-  router:
-    type: OS::Neutron::Router
-    properties:
-      external_gateway_info:
-        network: { get_param: public_network }
-
-  router-interface:
-    type: OS::Neutron::RouterInterface
-    properties:
-      router_id: { get_resource: router }
-      subnet: { get_resource: private_subnet }
-
-  oshift_port:
-    type: OS::Neutron::Port
-    properties:
-      network: { get_resource: private_network }
-      security_groups:
-        - { get_resource: oshift_dev_security_group }
+        - protocol: tcp
+          port_range_min: 9200
+          port_range_max: 9200
+        - protocol: tcp
+          port_range_min: 9300
+          port_range_max: 9300
 
   oshift_instance:
     type: OS::Nova::Server
@@ -168,20 +147,9 @@ resources:
       flavor: { get_param: flavor }
       key_name: { get_param: key }
       networks:
-        - port: { get_resource: oshift_port }
+        - network: { get_param: public_network }
       user_data_format: RAW
       user_data: { get_resource: oshift_boot_config }
-
-  floating_ip:
-    type: OS::Neutron::FloatingIP
-    properties:
-      floating_network: { get_param: public_network }
-
-  floating_ip_assoc:
-    type: OS::Neutron::FloatingIPAssociation
-    properties:
-      floatingip_id: { get_resource: floating_ip }
-      port_id: { get_resource: oshift_port }
 
 outputs:
   instance_name:
@@ -189,7 +157,4 @@ outputs:
     value: { get_attr: [oshift_instance, name] }
   instance_ip:
     description: The IP address of the deployed instance
-    value: { get_attr: [floating_ip, floating_ip_address] }
-  private_instance_ip:
-    description: The private IP address of the deployed instance
-    value: { get_attr: [oshift_port, fixed_ips, 0, ip_address] }
+    value: { get_attr: [oshift_instance, first_address] }
