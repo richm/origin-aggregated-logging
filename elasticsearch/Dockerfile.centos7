@@ -8,23 +8,18 @@ USER 0
 
 ENV ES_CONF=/etc/elasticsearch/ \
     ES_HOME=/usr/share/elasticsearch \
-    ES_VER=5.6.13 \
+    ES_VER=6.7.1 \
     HOME=/opt/app-root/src \
     INSTANCE_RAM=512G \
-    JAVA_VER=1.8.0 \
-    JAVA_HOME=/usr/lib/jvm/jre \
+    JAVA_VER=latest \
+    JAVA_HOME=/usr/lib/jvm/java-12 \
     NODE_QUORUM=1 \
-    OSE_ES_VER=5.6.13.5 \
-    PROMETHEUS_EXPORTER_VER=5.6.13.2 \
     PLUGIN_LOGLEVEL=INFO \
     RECOVER_AFTER_NODES=1 \
     RECOVER_EXPECTED_NODES=1 \
     RECOVER_AFTER_TIME=5m \
     DHE_TMP_KEY_SIZE=2048 \
     RELEASE_STREAM=origin
-
-ARG OSE_ES_VER=5.6.13.5
-ARG SG_VER=5.6.13-19.2
 
 LABEL io.k8s.description="Elasticsearch container for EFK aggregated logging storage" \
       io.k8s.display-name="Elasticsearch ${ES_VER}" \
@@ -33,15 +28,29 @@ LABEL io.k8s.description="Elasticsearch container for EFK aggregated logging sto
       architecture=x86_64 \
       name="openshift3/logging-elasticsearch"
 
-ADD elasticsearch.repo /etc/yum.repos.d/elasticsearch.repo
 # install the RPMs in a separate step so it can be cached
-RUN rpm --import https://artifacts.elastic.co/GPG-KEY-elasticsearch && \
-    yum install -y --setopt=tsflags=nodocs --nogpgcheck \
-                java-${JAVA_VER}-openjdk-headless \
-                elasticsearch-${ES_VER} \
-                openssl \
-                PyYAML && \
+# need epel for java-12 (java-latest)
+RUN yum -y install --setopt=tsflags=nodocs epel-release centos-release-scl && \
+    packages="java-${JAVA_VER}-openjdk-devel rh-maven35" && \
+    yum install -y --setopt=tsflags=nodocs $packages && \
+    rpm -V $packages && \
     yum clean all
+
+COPY vendor/ /source/
+RUN cd /source/elasticsearch && \
+    ./gradlew -Dbuild.snapshot=false -Dlicense.key=/dev/null clean :distribution:archives:oss-tar:assemble --parallel --console plain && \
+    ls -l distribution/archives/oss-tar/build/distributions/elasticsearch-oss-${ES_VER}.tar.gz && \
+    mkdir -p ${ES_HOME} && \
+    tar -C ${ES_HOME} --strip-components=1 -x -z -f distribution/archives/oss-tar/build/distributions/elasticsearch-oss-${ES_VER}.tar.gz
+
+RUN echo 'set -euxo pipefail && \
+    cd /source/security-parent && mvn -DfailOnNoGitDirectory=false clean install && \
+    cd ../security && mvn -DfailOnNoGitDirectory=false clean install && \
+    cd ../security-ssl && mvn -DfailOnNoGitDirectory=false clean install && \
+    cd ../security-advanced-modules && mvn -DfailOnNoGitDirectory=false clean install && \
+    cd ../security && mvn -DfailOnNoGitDirectory=false clean package -Padvanced && \
+    ${ES_HOME}/bin/elasticsearch-plugin install file:///source/security/target/releases/*.zip' | \
+    scl enable rh-maven35 -
 
 ADD sgconfig/ ${HOME}/sgconfig/
 ADD index_templates/ ${ES_HOME}/index_templates/
