@@ -37,6 +37,18 @@ RUN yum -y install --setopt=tsflags=nodocs epel-release centos-release-scl && \
     yum clean all
 
 COPY vendor/ /source/
+# TODO: es publish maven artifacts to ~/.m2/repository
+# TODO: od4es uses ~/.m2/repository
+# wip
+# JAVA_HOME=/usr/lib/jvm/java-12 ./gradlew -Dbuild.snapshot=false -Drepos.mavenLocal=~/.m2/repository -x benchmarks:build \
+# -x client:benchmark:build -x x-pack:license-tools:build -x x-pack:plugin:build  -x test -x integTest -Dlicense.key=/dev/null \
+# clean :distribution:archives:oss-tar:assemble publish --stacktrace --console plain
+# publish doesn't work -
+# Execution failed for task ':build-tools:publishPluginMavenPublicationToLocalTestRepository'.
+# > Failed to publish publication 'pluginMaven' to repository 'localTest'
+#   > java.io.FileNotFoundException: /home/rmeggins/elasticsearch/buildSrc/build/publications/pluginMaven/pom-default.xml (No such file or directory)
+# tried to copy file into place - something is erasing it
+# duh - the build directory is dynamic - need to figure out how to publish it
 RUN cd /source/elasticsearch && \
     ./gradlew -Dbuild.snapshot=false -Dlicense.key=/dev/null clean :distribution:archives:oss-tar:assemble --parallel --console plain && \
     ls -l distribution/archives/oss-tar/build/distributions/elasticsearch-oss-${ES_VER}.tar.gz && \
