@@ -41,7 +41,8 @@ test2match = {
                   "undefined23": False
               },
               "undefined4": "undefined4",
-              "undefined5": "undefined5"
+              "undefined5": "undefined5",
+              "undefined.6": "undefined6"
     },
     "test2": {"undefined":
               {"undefined1": "undefined1",
@@ -53,7 +54,8 @@ test2match = {
                    "undefined23": False
                },
                "undefined4": "undefined4",
-               "undefined5": "undefined5"
+               "undefined5": "undefined5",
+               "undefined.6": "undefined6"
               }
     },
     "test3": {"undefined":
@@ -64,7 +66,8 @@ test2match = {
                    "undefined2": "undefined2",
                    "undefined22": 2222,
                    "undefined23": False
-               }
+               },
+               "undefined.6": "undefined6"
               },
               "undefined4": "undefined4",
               "undefined5": "undefined5"
@@ -77,7 +80,8 @@ test2match = {
                    "undefined2": "undefined2",
                    "undefined22": 2222,
                    "undefined23": False
-               }
+               },
+               "undefined.6": "undefined6"
               },
               "undefined4": "undefined4",
               "undefined5": "undefined5"
@@ -90,7 +94,34 @@ test2match = {
                    "undefined2": "undefined2",
                    "undefined22": 2222,
                    "undefined23": False
-               }
+               },
+               "undefined.6": "undefined6"
+              },
+              "undefined4": "undefined4",
+              "undefined5": "undefined5",
+              "empty1": "",
+              "undefined3": {"emptyvalue": ""}
+    },
+    "test6": {"myname":
+              {"undefined1": "undefined1",
+               "undefined11": 1111,
+               "undefined12": True,
+               "undefined2": {
+                   "undefined2": "undefined2",
+                   "undefined22": 2222,
+                   "undefined23": False
+               },
+               "undefined_6": "undefined6"
+              },
+              "undefined4": "undefined4",
+              "undefined5": "undefined5",
+              "empty1": "",
+              "undefined3": {"emptyvalue": ""}
+    },
+    "test7": {"myname":
+              {"undefined1": "undefined1",
+               "undefined11": 1111,
+               "undefined12": True,
               },
               "undefined4": "undefined4",
               "undefined5": "undefined5",

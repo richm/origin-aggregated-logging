@@ -9,6 +9,7 @@ os::util::environment::use_sudo
 
 os::test::junit::declare_suite_start "test/zzz-rsyslog"
 
+LOGGING_NS=${LOGGING_NS:-openshift-logging}
 es_pod=$( get_es_pod es )
 es_ops_pod=$( get_es_pod es-ops )
 es_ops_pod=${es_ops_pod:-$es_pod}
@@ -47,6 +48,7 @@ cleanup() {
     local return_code="$?"
     set +e
     get_all_logging_pod_logs
+    oc get cm rsyslog -o yaml > $ARTIFACT_DIR/rsyslog_configmap.yaml 2>&1
     if [ "deploy_using_ansible" = "$deployfunc" ] ; then
         if [ -n "${tmpinv:-}" -a -f "${tmpinv:-}" ] ; then
             rm -f $tmpinv
@@ -274,7 +276,7 @@ if [ $logsize -gt 0 ]; then
     oc exec $rpod -c rsyslog -- ls -l /var/log/rsyslog/ | artifact_out
     oc exec $rpod -c rsyslog -- cat /var/log/rsyslog/rsyslog.log > $ARTIFACT_DIR/rsyslog-before-rotation.log
     # this will restart the rsyslog pod
-    oc set env daemonset/rsyslog LOGGING_FILE_SIZE=$maxsize LOGGING_FILE_AGE=$maxcount
+    oc set env $rsyslog_ds LOGGING_FILE_SIZE=$maxsize LOGGING_FILE_AGE=$maxcount
 
     os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
     os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
@@ -320,9 +322,131 @@ else
 fi
 
 # switch LOGGING_FILE_PATH to console
-oc set env daemonset/rsyslog LOGGING_FILE_PATH=console
+oc set env $rsyslog_ds LOGGING_FILE_PATH=console
 os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
 os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
 rpod=$( get_running_pod rsyslog )
 oc logs $rpod -c rsyslog > $ARTIFACT_DIR/rsyslog.console.log 2>&1
 os::cmd::expect_failure "grep 'oc exec <pod_name> -- logs' $ARTIFACT_DIR/rsyslog.console.log"
+
+# switch back LOGGING_FILE_PATH to default
+oc set env $rsyslog_ds LOGGING_FILE_PATH-
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+
+artifact_log "************************"
+artifact_log "Testing undefined fields"
+artifact_log "************************"
+
+artifact_log "0. Preparing test data"
+cfgdir=$( mktemp -d )
+oc extract cm/rsyslog --to=$cfgdir
+cat > $cfgdir/66-debug.conf << EOF
+# DEBUGGING
+set \$!undefined1 = "undefined1";
+set \$!undefined11 = 1111;
+set \$!undefined12 = "true";
+set \$!empty1 = "";
+set \$!undefined2!undefined2 = "undefined2";
+set \$!undefined1!undefined22 = 2222;
+set \$!undefined2!undefined23 = "false";
+set \$!undefined3!emptyvalue = "";
+set \$!undefined4 = "undefined4";
+set \$!undefined5 = "undefined5";
+set \$!undefined.6 = "undefined6";
+# DEBUGGING
+EOF
+ls -l $cfgdir | artifact_out
+oc delete cm rsyslog
+oc create cm rsyslog --from-file=$cfgdir
+
+restart_rsyslog_pod $rpod
+rpod=$( get_running_pod rsyslog )
+
+oc exec $rpod -c rsyslog -- ls -l /etc/rsyslog.d/66-debug.conf | artifact_out
+oc exec $rpod -c rsyslog -- cat /etc/rsyslog.d/66-debug.conf | artifact_out
+
+# DEBUG DEBUG DEBUG
+oc set env $rsyslog_ds UNDEFINED_DEBUG=true
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+# DEBUG DEBUG DEBUG
+
+artifact_log "1. default values"
+os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'use_undefined:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}'" "false"
+os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'undefined_name:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}'" "undefined"
+artifact_log "ok"
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test1"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test1"
+
+artifact_log "2. enable use_undefined - undefined fields are stored in 'undefined' field"
+keep_fields="method,statusCode,type,@timestamp,req,res,CONTAINER_NAME,CONTAINER_ID_FULL"
+oc set env $rsyslog_ds CDM_USE_UNDEFINED=true CDM_EXTRA_KEEP_FIELDS=$keep_fields 2>&1 | artifact_out
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'use_undefined:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}'" "true"
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test2"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test2"
+
+artifact_log "3. user specifies extra fields to keep"
+oc set env $rsyslog_ds CDM_EXTRA_KEEP_FIELDS=undefined4,undefined5,$keep_fields 2>&1 | artifact_out
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'extra_keep_fields:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}' | sed -e 's/.*\(undefined4\).*/\1/'" "undefined4"
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test3"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test3"
+
+artifact_log "4. user specifies alternate undefined name to use"
+oc set env $rsyslog_ds CDM_UNDEFINED_NAME=myname 2>&1 | artifact_out
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'undefined_name:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}'" "myname"
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test4"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test4"
+
+artifact_log "5. reserve specified empty field as empty"
+oc set env $rsyslog_ds CDM_EXTRA_KEEP_FIELDS=undefined4,undefined5,empty1,undefined3,$keep_fields CDM_KEEP_EMPTY_FIELDS=undefined4,undefined5,empty1,undefined3 2>&1 | artifact_out
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'keep_empty_fields:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}' | sed -e 's/.*\(empty1\).*/\1/'" "empty1"
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test5 allow_empty"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test5 allow_empty"
+
+artifact_log "6. replace dot with underscore"
+oc set env $rsyslog_ds CDM_EXTRA_KEEP_FIELDS=undefined4,undefined5,empty1,undefined3,$keep_fields CDM_KEEP_EMPTY_FIELDS=undefined4,undefined5,empty1,undefined3 MERGE_JSON_LOG=true CDM_UNDEFINED_DOT_REPLACE_CHAR=_ 2>&1 | artifact_out
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test6 allow_empty"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test6 allow_empty"
+
+artifact_log "7. set CDM_UNDEFINED_MAX_NUM_FIELDS to 3"
+oc set env $rsyslog_ds CDM_EXTRA_KEEP_FIELDS=undefined4,undefined5,empty1,undefined3,$keep_fields CDM_KEEP_EMPTY_FIELDS=undefined4,undefined5,empty1,undefined3 CMERGE_JSON_LOG=true DM_UNDEFINED_DOT_REPLACE_CHAR=_ CDM_UNDEFINED_MAX_NUM_FIELDS=3 2>&1 | artifact_out
+os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
+os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
+rpod=$( get_running_pod rsyslog )
+
+wait_for_fluentd_to_catch_up get_logmessage get_logmessage2
+os::cmd::expect_success "cat $proj | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test7 allow_empty"
+os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-data-model.py test7 allow_empty"
+
+os::cmd::expect_success "oc exec $rpod -c rsyslog -- ls -l /var/log/rsyslog/rsyslog.log"
+os::cmd::expect_failure "oc exec $rpod -c rsyslog -- grep 'panic: interface conversion' /var/log/rsyslog/rsyslog.log"
+

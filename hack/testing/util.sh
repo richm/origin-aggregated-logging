@@ -582,8 +582,6 @@ function wait_for_fluentd_to_catch_up() {
         else
             os::log::error ops record for "$uuid_es_ops" not found in journal
         fi
-        os::log::error here is the starting fluentd journal cursor
-        echo $journalstartcursor
         os::log::error here is the current fluentd journal cursor
         oal_sudo cat /var/log/journal.pos || :
         oal_sudo cat /var/log/journal_pos.json || :
@@ -713,6 +711,19 @@ get_mux_pod_log() {
     oc exec $pod -- cat $logfile 2> /dev/null || :
 }
 
+# rsyslog may have pod logs and logs in the file
+get_rsyslog_pod_log() {
+    local pod=${1:-$( get_running_pod rsyslog )}
+    local logfile=${2:-/var/log/rsyslog/rsyslog.log}
+    oc logs $pod -c rsyslog 2>&1
+    if oc exec $pod -c rsyslog -- logs --all 2>&1 ; then
+        : # done
+    elif oal_sudo test -f $logfile ; then
+        # can't read from the pod directly - see if we can get the log file
+        oal_sudo cat $logfile
+    fi
+}
+
 # writes all pod logs to the given outdir or $ARTIFACT_DIR in the form
 # pod_name.container_name.log
 # it will get both the oc logs output and any log files produced by
@@ -728,12 +739,13 @@ get_all_logging_pod_logs() {
       case "$p" in
         logging-fluentd-*|fluentd-*) get_fluentd_pod_log $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
         logging-mux-*) get_mux_pod_log $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
+        logging-rsyslog-*|rsyslog-*) get_rsyslog_pod_log $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
         logging-es-*|elasticsearch-*) oc logs -n ${LOGGING_NS} -c $container $p > $ARTIFACT_DIR/$p.$container.log 2>&1
                       oc exec -c elasticsearch -n ${LOGGING_NS} $p -- logs >> $ARTIFACT_DIR/$p.$container.log 2>&1
                       ;;
-	    *) oc logs -n ${LOGGING_NS} -c $container $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
+        *) oc logs -n ${LOGGING_NS} -c $container $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
       esac
-	done
+    done
   done
 }
 
@@ -783,6 +795,9 @@ get_fluentd_cm_name() {
 }
 
 fluentd_cm=${fluentd_cm:-$(get_fluentd_cm_name)}
+
+# Hardcode daemonset/rsyslog for the case the rsyslog pod does not exist.
+rsyslog_ds=${rsyslog_ds:-daemonset/rsyslog}
 
 enable_cluster_logging_operator() {
     if oc -n ${LOGGING_NS} get deploy cluster-logging-operator > /dev/null 2>&1 ; then

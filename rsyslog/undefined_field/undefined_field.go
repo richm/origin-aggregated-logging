@@ -298,7 +298,9 @@ func main() {
 		jsonMap := make(map[string]interface{})
 		rawStr := scanner.Text()
 		if noaction {
-			fmt.Fprintln(logfile, "No Action Needed for ", rawStr)
+			if undefined_debug {
+				fmt.Fprintln(logfile, "No Action Needed for ", rawStr)
+			}
 			fmt.Println(noChanges)
 			continue
 		}
@@ -315,7 +317,9 @@ func main() {
 		}
 		topval, ismap := jsonMap["$!"].(map[string]interface{})
 		if !ismap {
-			fmt.Fprintln(logfile, "Result is String: ", rawStr)
+			if undefined_debug {
+				fmt.Fprintln(logfile, "Result is String: ", rawStr)
+			}
 			fmt.Println(noChanges)
 			continue
 		}
@@ -325,7 +329,9 @@ func main() {
 		undefined_cur_num_fields = undefined_max_num_fields
 		all, replace_me, has_undefined := replaceDotMoveUndefined(topval, true)
 		if !replace_me {
-			fmt.Fprintln(logfile, "No Need to Replace for ", rawStr)
+			if undefined_debug {
+				fmt.Fprintln(logfile, "No Need to Replace for ", rawStr)
+			}
 			fmt.Println(noChanges)
 			continue
 		}
