@@ -43,7 +43,7 @@ function get_curator_dcs() {
     oc get dc --selector logging-infra=curator -o name
 }
 
-function get_es_pod() {
+function get_es_pod_all() {
     local clustertype="$1"
     # $1 - cluster name postfix
     # for allinone there is just "elasticsearch"
@@ -61,6 +61,11 @@ function get_es_pod() {
     else
       oc -n $LOGGING_NS get pods -l cluster-name=logging-${clustertype},es-node-role=clientdata --no-headers 2> /dev/null | awk '$3 == "Running" {print $1}'
     fi
+}
+
+function get_es_pod() {
+    local clustertype="$1"
+    get_es_pod_all "$clustertype" | head -1
 }
 
 function get_es_svc() {
@@ -700,7 +705,19 @@ get_fluentd_pod_log() {
         : # done
     elif oal_sudo test -f $logfile ; then
         # can't read from the pod directly - see if we can get the log file
-        oal_sudo cat $logfile
+        oal_sudo cat ${logfile}.* ${logfile} || :
+    fi
+}
+
+# rsyslog may have pod logs and logs in the file
+get_rsyslog_pod_log() {
+    local pod=${1:-$( get_running_pod rsyslog )}
+    local container=${2:-rsyslog}
+    oc logs -c $container $pod 2>&1
+    if [ $container = rsyslog ] ; then
+        oc exec -c $container $pod -- logs 2>&1 || oal_sudo cat /var/log/rsyslog/rsyslog.log.* /var/log/rsyslog/rsyslog.log || :
+    else
+        oal_sudo cat /var/lib/rsyslog.pod/logrotate.log /var/log/rsyslog/logrotate.log || :
     fi
 }
 
@@ -720,7 +737,10 @@ get_rsyslog_pod_log() {
         : # done
     elif oal_sudo test -f $logfile ; then
         # can't read from the pod directly - see if we can get the log file
-        oal_sudo cat $logfile
+        oal_sudo cat ${logfile}.log-* $logfile 2> /dev/null || :
+        oal_sudo cat /var/log/rsyslog/rsyslog_debug.log-* /var/log/rsyslog/rsyslog_debug.log 2> /dev/null || :
+        oal_sudo cat /var/log/rsyslog/logrotate.log-* /var/log/rsyslog/logrotate.log 2> /dev/null || :
+        oal_sudo cat /var/lib/rsyslog.pod/logrotate.log-* /var/lib/rsyslog.pod/logrotate.log 2> /dev/null || :
     fi
 }
 
@@ -736,10 +756,17 @@ get_all_logging_pod_logs() {
     oc -n ${LOGGING_NS} describe pod $p > $ARTIFACT_DIR/$p.describe 2>&1 || :
     oc -n ${LOGGING_NS} get pod $p -o yaml > $ARTIFACT_DIR/$p.yaml 2>&1 || :
     for container in $(oc get po $p -o jsonpath='{.spec.containers[*].name}') ; do
+      if [ $container = rsyslog ] ; then
+        get_rsyslog_pod_log $p $container > $ARTIFACT_DIR/$p.$container.log 2>&1
+        continue
+      fi
+      if [ $container = logrotate ] ; then
+        # we got the logs from the rsyslog container already
+        continue
+      fi
       case "$p" in
         logging-fluentd-*|fluentd-*) get_fluentd_pod_log $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
         logging-mux-*) get_mux_pod_log $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
-        logging-rsyslog-*|rsyslog-*) get_rsyslog_pod_log $p > $ARTIFACT_DIR/$p.$container.log 2>&1 ;;
         logging-es-*|elasticsearch-*) oc logs -n ${LOGGING_NS} -c $container $p > $ARTIFACT_DIR/$p.$container.log 2>&1
                       oc exec -c elasticsearch -n ${LOGGING_NS} $p -- logs >> $ARTIFACT_DIR/$p.$container.log 2>&1
                       ;;
