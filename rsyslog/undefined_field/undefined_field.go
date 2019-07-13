@@ -191,16 +191,18 @@ func onInit() {
 		replacer = strings.NewReplacer(".", undefined_dot_replace_char)
 	}
 
-	fmt.Fprintln(logfile, "mmexternal: merge_json_log: ", merge_json_log)
-	fmt.Fprintln(logfile, "mmexternal: use_undefined: ", use_undefined)
-	fmt.Fprintln(logfile, "mmexternal: default_keep_fields: ", default_keep_fields)
-	fmt.Fprintln(logfile, "mmexternal: extra_keep_fields: ", extra_keep_fields)
-	fmt.Fprintln(logfile, "mmexternal: undefined_name: ", undefined_name)
-	fmt.Fprintln(logfile, "mmexternal: keep_empty_fields: ", tmp_keep_empty_fields)
-	fmt.Fprintln(logfile, "mmexternal: undefined_to_string: ", undefined_to_string)
-	fmt.Fprintln(logfile, "mmexternal: undefined_dot_replace_char: ", undefined_dot_replace_char)
-	fmt.Fprintln(logfile, "mmexternal: undefined_max_num_fields: ", undefined_max_num_fields)
-	fmt.Fprintln(logfile, "mmexternal: noaction: ", noaction)
+	if undefined_debug {
+		fmt.Fprintln(logfile, "mmexternal: merge_json_log: ", merge_json_log)
+		fmt.Fprintln(logfile, "mmexternal: use_undefined: ", use_undefined)
+		fmt.Fprintln(logfile, "mmexternal: default_keep_fields: ", default_keep_fields)
+		fmt.Fprintln(logfile, "mmexternal: extra_keep_fields: ", extra_keep_fields)
+		fmt.Fprintln(logfile, "mmexternal: undefined_name: ", undefined_name)
+		fmt.Fprintln(logfile, "mmexternal: keep_empty_fields: ", tmp_keep_empty_fields)
+		fmt.Fprintln(logfile, "mmexternal: undefined_to_string: ", undefined_to_string)
+		fmt.Fprintln(logfile, "mmexternal: undefined_dot_replace_char: ", undefined_dot_replace_char)
+		fmt.Fprintln(logfile, "mmexternal: undefined_max_num_fields: ", undefined_max_num_fields)
+		fmt.Fprintln(logfile, "mmexternal: noaction: ", noaction)
+	}
 }
 
 func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (map[string]interface{},bool,bool) {
