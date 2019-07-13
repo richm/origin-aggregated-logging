@@ -346,11 +346,11 @@ cat > $cfgdir/66-debug.conf << EOF
 # DEBUGGING
 set \$!undefined1 = "undefined1";
 set \$!undefined11 = 1111;
-set \$!undefined12 = "true";
+set \$!undefined12 = "True";
 set \$!empty1 = "";
 set \$!undefined2!undefined2 = "undefined2";
 set \$!undefined1!undefined22 = 2222;
-set \$!undefined2!undefined23 = "false";
+set \$!undefined2!undefined23 = "False";
 set \$!undefined3!emptyvalue = "";
 set \$!undefined4 = "undefined4";
 set \$!undefined5 = "undefined5";
@@ -367,11 +367,12 @@ rpod=$( get_running_pod rsyslog )
 oc exec $rpod -c rsyslog -- ls -l /etc/rsyslog.d/66-debug.conf | artifact_out
 oc exec $rpod -c rsyslog -- cat /etc/rsyslog.d/66-debug.conf | artifact_out
 
-# DEBUG DEBUG DEBUG
+# UNDEFINED_DEBUG needs to be enabled for checking configs in the following tests.
 oc set env $rsyslog_ds UNDEFINED_DEBUG=true
 os::cmd::try_until_failure "oc get pods $rpod > /dev/null 2>&1"
 os::cmd::try_until_success "oc get pods 2> /dev/null | grep -q 'rsyslog.*Running'"
-# DEBUG DEBUG DEBUG
+rpod=$( get_running_pod rsyslog )
+os::cmd::try_until_success "oc exec $rpod -c rsyslog -- grep 'use_undefined:' /var/log/rsyslog/rsyslog.log"
 
 artifact_log "1. default values"
 os::cmd::expect_success_and_text "oc exec $rpod -c rsyslog -- grep 'use_undefined:' /var/log/rsyslog/rsyslog.log | tail -n 1 | awk '{print \$3}'" "false"

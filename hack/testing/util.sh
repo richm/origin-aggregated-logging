@@ -709,18 +709,6 @@ get_fluentd_pod_log() {
     fi
 }
 
-# rsyslog may have pod logs and logs in the file
-get_rsyslog_pod_log() {
-    local pod=${1:-$( get_running_pod rsyslog )}
-    local container=${2:-rsyslog}
-    oc logs -c $container $pod 2>&1
-    if [ $container = rsyslog ] ; then
-        oc exec -c $container $pod -- logs 2>&1 || oal_sudo cat /var/log/rsyslog/rsyslog.log.* /var/log/rsyslog/rsyslog.log || :
-    else
-        oal_sudo cat /var/lib/rsyslog.pod/logrotate.log /var/log/rsyslog/logrotate.log || :
-    fi
-}
-
 get_mux_pod_log() {
     local pod=${1:-$( get_running_pod mux )}
     local logfile=${2:-/var/log/fluentd/fluentd.log}
