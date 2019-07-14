@@ -346,11 +346,11 @@ cat > $cfgdir/66-debug.conf << EOF
 # DEBUGGING
 set \$!undefined1 = "undefined1";
 set \$!undefined11 = 1111;
-set \$!undefined12 = "True";
+set \$!undefined12 = True;
 set \$!empty1 = "";
 set \$!undefined2!undefined2 = "undefined2";
 set \$!undefined1!undefined22 = 2222;
-set \$!undefined2!undefined23 = "False";
+set \$!undefined2!undefined23 = False;
 set \$!undefined3!emptyvalue = "";
 set \$!undefined4 = "undefined4";
 set \$!undefined5 = "undefined5";
