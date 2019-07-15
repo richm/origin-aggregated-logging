@@ -210,6 +210,9 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 	has_undefined := false
 	cp := make(map[string]interface{})
 	for origkey, value := range input {
+		if len(origkey) == 0 {
+			continue
+		}
 		key := origkey
 		if topPropLevel && merge_json_log && undefined_dot_replace_char != "UNUSED" {
 			// replace '.' with specified char (e.g., '_')
