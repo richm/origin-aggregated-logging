@@ -220,9 +220,11 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 		valuemap, ismap := value.(map[string]interface{})
 		valuearraymap, isarraymap := value.([]interface{})
 		if _, exists := keep_empty_fields[origkey]; !exists {
-			if !ismap && (value == nil || len(value.(string)) == 0) ||
-				isarraymap && len(valuearraymap) == 0 ||
-				ismap && len(valuemap) == 0 {
+                       valuestring, isstring := value.(string)
+                       if (isarraymap && len(valuearraymap) == 0) ||
+                               (ismap && len(valuemap) == 0) ||
+                               (isstring && len(valuestring) == 0) ||
+                               (value == nil) {
 				replace_me = true
 				continue
 			}
@@ -278,7 +280,7 @@ func replaceDotMoveUndefinedArray(inputs []interface{}) []interface{} {
 			rval := replaceDotMoveUndefinedArray(valuearraymap)
 			cp = append(cp, rval)
 		} else {
-			fmt.Fprintln(logfile, "Error:", input, " is not a map.  Ignoring...")
+			cp = append(cp, input)
 		}
 	}
 	return cp
