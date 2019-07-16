@@ -115,7 +115,6 @@ var (
 	undefined_max_num_fields int64
 	undefined_cur_num_fields int64
 	logfile *os.File
-	noaction		  = false
 	replacer		  = &strings.Replacer{}
 )
 
@@ -164,9 +163,6 @@ func onInit() {
 		panic(fmt.Errorf("Could not open config file [%s]: [%v]", undefined_config, err))
 	}
 
-	if !use_undefined && tmp_keep_empty_fields == "" && !undefined_to_string && undefined_dot_replace_char == "UNUSED" {
-		noaction = true
-	}
 	if undefined_max_num_fields == -1 {
 		undefined_max_num_fields = int64(^uint(0) >> 1)
 	}
@@ -201,7 +197,6 @@ func onInit() {
 		fmt.Fprintln(logfile, "mmexternal: undefined_to_string: ", undefined_to_string)
 		fmt.Fprintln(logfile, "mmexternal: undefined_dot_replace_char: ", undefined_dot_replace_char)
 		fmt.Fprintln(logfile, "mmexternal: undefined_max_num_fields: ", undefined_max_num_fields)
-		fmt.Fprintln(logfile, "mmexternal: noaction: ", noaction)
 	}
 }
 
@@ -302,13 +297,6 @@ func main() {
 		jsonCopyMap := make(map[string]interface{})
 		jsonMap := make(map[string]interface{})
 		rawStr := scanner.Text()
-		if noaction {
-			if undefined_debug {
-				fmt.Fprintln(logfile, "No Action Needed for ", rawStr)
-			}
-			fmt.Println(noChanges)
-			continue
-		}
 		if undefined_debug {
 			fmt.Fprintln(logfile, "Source: ", rawStr)
 		}
