@@ -85,8 +85,8 @@ import (
 )
 
 const (
-	initial_logging_file_path = "/var/tmp/rsyslog/rsyslog.log"
-	undefined_config          = "/var/tmp/rsyslog/undefined.json"
+	initial_logging_file_path = "/var/log/rsyslog/rsyslog.log"
+	undefined_config          = "/var/lib/rsyslog.pod/undefined.json"
 	noChanges                 = "{}"
 )
 
