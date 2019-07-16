@@ -76,46 +76,47 @@
 package main
 
 import (
-	"encoding/json"
 	"bufio"
-	"strings"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 const (
-	initial_logging_file_path          = "/var/log/rsyslog/rsyslog.log"
-	undefined_config                   = "/var/lib/rsyslog.pod/undefined.json"
-	noChanges                          = "{}"
+	initial_logging_file_path = "/var/tmp/rsyslog/rsyslog.log"
+	undefined_config          = "/var/tmp/rsyslog/undefined.json"
+	noChanges                 = "{}"
 )
 
 type UndefinedConfig struct {
-  Debug bool `json:"UNDEFINED_DEBUG"`
-  Merge_json_log bool `json:"MERGE_JSON_LOG"`
-  Use_undefined bool `json:"CDM_USE_UNDEFINED"`
-  Undefined_to_string bool `json:"CDM_UNDEFINED_TO_STRING"`
-  Default_keep_fields string `json:"CDM_DEFAULT_KEEP_FIELDS"`
-  Extra_keep_fields string `json:"CDM_EXTRA_KEEP_FIELDS"`
-  Undefined_name string `json:"CDM_UNDEFINED_NAME"`
-  Keep_empty_fields string `json:"CDM_KEEP_EMPTY_FIELDS"`
-  Undefined_dot_replace_char string `json:"CDM_UNDEFINED_DOT_REPLACE_CHAR"`
-  Undefined_max_num_fields int64 `json:"CDM_UNDEFINED_MAX_NUM_FIELDS"`
+	Debug                      bool   `json:"UNDEFINED_DEBUG"`
+	Merge_json_log             bool   `json:"MERGE_JSON_LOG"`
+	Use_undefined              bool   `json:"CDM_USE_UNDEFINED"`
+	Undefined_to_string        bool   `json:"CDM_UNDEFINED_TO_STRING"`
+	Default_keep_fields        string `json:"CDM_DEFAULT_KEEP_FIELDS"`
+	Extra_keep_fields          string `json:"CDM_EXTRA_KEEP_FIELDS"`
+	Undefined_name             string `json:"CDM_UNDEFINED_NAME"`
+	Keep_empty_fields          string `json:"CDM_KEEP_EMPTY_FIELDS"`
+	Undefined_dot_replace_char string `json:"CDM_UNDEFINED_DOT_REPLACE_CHAR"`
+	Undefined_max_num_fields   int64  `json:"CDM_UNDEFINED_MAX_NUM_FIELDS"`
 }
 
 var (
-	undefined_debug bool
-	merge_json_log bool
-	use_undefined bool
-	keep_fields map[string]string
-	keep_empty_fields map[string]string
-	undefined_name string
-	undefined_to_string bool
+	undefined_debug            bool
+	merge_json_log             bool
+	use_undefined              bool
+	keep_fields                map[string]string
+	keep_empty_fields          map[string]string
+	undefined_name             string
+	undefined_to_string        bool
 	undefined_dot_replace_char string
-	undefined_max_num_fields int64
-	undefined_cur_num_fields int64
-	logfile *os.File
-	replacer		  = &strings.Replacer{}
+	undefined_max_num_fields   int64
+	undefined_cur_num_fields   int64
+	logfile                    *os.File
+	noaction                   = false
+	replacer                   = &strings.Replacer{}
 )
 
 func getMapStringValue(m map[string]interface{}, key string) (string, bool) {
@@ -200,7 +201,7 @@ func onInit() {
 	}
 }
 
-func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (map[string]interface{},bool,bool) {
+func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (map[string]interface{}, bool, bool) {
 	replace_me := false
 	has_undefined := false
 	cp := make(map[string]interface{})
@@ -220,14 +221,21 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 		valuemap, ismap := value.(map[string]interface{})
 		valuearraymap, isarraymap := value.([]interface{})
 		if _, exists := keep_empty_fields[origkey]; !exists {
-                       valuestring, isstring := value.(string)
-                       if (isarraymap && len(valuearraymap) == 0) ||
-                               (ismap && len(valuemap) == 0) ||
-                               (isstring && len(valuestring) == 0) ||
-                               (value == nil) {
+			valuestring, isstring := value.(string)
+			if (isarraymap && len(valuearraymap) == 0) ||
+				(ismap && len(valuemap) == 0) ||
+				(isstring && len(valuestring) == 0) ||
+				(value == nil) {
 				replace_me = true
+				//if undefined_debug {
+				//	fmt.Fprintf(logfile, "mmexternal: skipping empty field: [%v] and value [%v]\n", origkey, value)
+				//}
 				continue
+				//} else {
+				//fmt.Fprintf(logfile, "mmexternal: keeping non-empty field: [%v] and value [%v]\n", origkey, value)
 			}
+			//} else {
+			//fmt.Fprintf(logfile, "mmexternal: keeping field: [%v] and value [%v]\n", origkey, value)
 		}
 		// use_undefined and key is not in keep_fields?
 		_, keepit := keep_fields[origkey]
