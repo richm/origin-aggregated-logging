@@ -343,7 +343,7 @@ artifact_log "0. Preparing test data"
 cfgdir=$( mktemp -d )
 oc extract cm/rsyslog --to=$cfgdir
 cat > $cfgdir/66-debug.conf << EOF
-set $.ret = parse_json("{\"undefined1\":\"undefined1\",\"undefined11\":1111,\"undefined12\":True,\"empty1\":\"\",\"undefined2\":{\"undefined2\":\"undefined2\",\"\":\"\",\"undefined22\":2222,\"undefined23\":False},\"undefined3\":{\"emptyvalue\":\"\"},\"undefined4\":\"undefined4\",\"undefined5\":\"undefined5\",\"undefined.6\":\"undefined6\"}", "\$!");
+set \$.ret = parse_json('{"undefined1":"undefined1","undefined11":1111,"undefined12":True,"empty1":"","undefined2":{"undefined2":"undefined2","":"","undefined22":2222,"undefined23":"False"},"undefined3":{"emptyvalue":""},"undefined4":"undefined4","undefined5":"undefined5","undefined.6":"undefined6"}', '\$!');
 EOF
 ls -l $cfgdir | artifact_out
 oc delete cm rsyslog
