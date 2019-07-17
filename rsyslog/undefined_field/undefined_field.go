@@ -277,13 +277,20 @@ func replaceDotMoveUndefinedArray(inputs []interface{}) []interface{} {
 	for _, input := range inputs {
 		valuemap, ismap := input.(map[string]interface{})
 		valuearraymap, isarraymap := input.([]interface{})
+		valuestring, isstring := input.(string)
 		if ismap {
 			rval, _, _ := replaceDotMoveUndefined(valuemap, false)
-			cp = append(cp, rval)
+			if rval != nil && len(rval) > 0 {
+				cp = append(cp, rval)
+			}
 		} else if isarraymap {
 			rval := replaceDotMoveUndefinedArray(valuearraymap)
-			cp = append(cp, rval)
-		} else {
+			if rval != nil && len(rval) > 0 {
+				cp = append(cp, rval)
+			}
+		} else if isstring && len(valuestring) > 0 {
+			cp = append(cp, input)
+		} else if input != nil {
 			cp = append(cp, input)
 		}
 	}
