@@ -115,7 +115,6 @@ var (
 	undefined_max_num_fields   int64
 	undefined_cur_num_fields   int64
 	logfile                    *os.File
-	noaction                   = false
 	replacer                   = &strings.Replacer{}
 )
 
@@ -227,15 +226,8 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 				(isstring && len(valuestring) == 0) ||
 				(value == nil) {
 				replace_me = true
-				//if undefined_debug {
-				//	fmt.Fprintf(logfile, "mmexternal: skipping empty field: [%v] and value [%v]\n", origkey, value)
-				//}
 				continue
-				//} else {
-				//fmt.Fprintf(logfile, "mmexternal: keeping non-empty field: [%v] and value [%v]\n", origkey, value)
 			}
-			//} else {
-			//fmt.Fprintf(logfile, "mmexternal: keeping field: [%v] and value [%v]\n", origkey, value)
 		}
 		// use_undefined and key is not in keep_fields?
 		_, keepit := keep_fields[origkey]
@@ -265,10 +257,14 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 			}
 		} else if isarraymap {
 			rval := replaceDotMoveUndefinedArray(valuearraymap)
-			cp[key] = rval
+			if rval != nil && len(rval) > 0 {
+				cp[key] = rval
+			}
 		} else if ismap {
 			rval, _, _ := replaceDotMoveUndefined(valuemap, false)
-			cp[key] = rval
+			if rval != nil && len(rval) > 0 {
+				cp[key] = rval
+			}
 		} else {
 			cp[key] = value
 		}
