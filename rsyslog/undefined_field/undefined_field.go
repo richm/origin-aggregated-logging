@@ -86,7 +86,7 @@ import (
 
 const (
 	initial_logging_file_path = "/var/log/rsyslog/rsyslog.log"
-	undefined_config          = "/var/lib/rsyslog.pod/undefined.json"
+	default_undefined_config  = "/var/lib/rsyslog.pod/undefined.json"
 	noChanges                 = "{}"
 )
 
@@ -116,6 +116,7 @@ var (
 	undefined_cur_num_fields   int64
 	logfile                    *os.File
 	replacer                   = &strings.Replacer{}
+	undefined_config           string
 )
 
 func getMapStringValue(m map[string]interface{}, key string) (string, bool) {
@@ -138,6 +139,10 @@ func onInit() {
 		panic(fmt.Errorf("Could not open file [%s]: [%v]", logging_file_path, err))
 	}
 
+	undefined_config = default_undefined_config
+	if eval := os.Getenv("UNDEFINED_CONFIG"); eval != "" {
+		undefined_config = eval
+	}
 	var undefined_config_obj UndefinedConfig
 	var default_keep_fields string
 	var extra_keep_fields string
