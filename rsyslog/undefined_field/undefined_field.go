@@ -223,10 +223,11 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 		}
 		// skip empty or not?
 		valuemap, ismap := value.(map[string]interface{})
-		valuearraymap, isarraymap := value.([]interface{})
-		if _, exists := keep_empty_fields[origkey]; !exists {
+		valuearray, isarray := value.([]interface{})
+		_, keepEmpty := keep_empty_fields[origkey]
+		if !keepEmpty {
 			valuestring, isstring := value.(string)
-			if (isarraymap && len(valuearraymap) == 0) ||
+			if (isarray && len(valuearray) == 0) ||
 				(ismap && len(valuemap) == 0) ||
 				(isstring && len(valuestring) == 0) ||
 				(value == nil) {
@@ -237,37 +238,39 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 		// use_undefined and key is not in keep_fields?
 		_, keepit := keep_fields[origkey]
 		if topPropLevel && use_undefined && !keepit {
-			// if unmdefined_max_num_fields > 0, move the undefined item to undefined_name
+			// if undefined_max_num_fields > 0, move the undefined item to undefined_name
 			if undefined_cur_num_fields > 0 {
 				if cp[undefined_name] == nil {
 					subcp := make(map[string]interface{})
 					cp[undefined_name] = subcp
 				}
-				if isarraymap {
-					rval := replaceDotMoveUndefinedArray(valuearraymap)
-					if len(rval) > 0 {
+				if isarray {
+					rval := replaceDotMoveUndefinedArray(valuearray)
+					if keepEmpty || len(rval) > 0 {
 						cp[undefined_name].(map[string]interface{})[key] = rval
+						undefined_cur_num_fields--
 					}
 				} else if ismap {
 					rval, _, _ := replaceDotMoveUndefined(valuemap, false)
-					if len(rval) > 0 {
+					if keepEmpty || len(rval) > 0 {
 						cp[undefined_name].(map[string]interface{})[key] = rval
+						undefined_cur_num_fields--
 					}
 				} else {
 					cp[undefined_name].(map[string]interface{})[key] = value
+					undefined_cur_num_fields--
 				}
-				undefined_cur_num_fields--
 				replace_me = true
 				has_undefined = true
 			}
-		} else if isarraymap {
-			rval := replaceDotMoveUndefinedArray(valuearraymap)
-			if rval != nil && len(rval) > 0 {
+		} else if isarray {
+			rval := replaceDotMoveUndefinedArray(valuearray)
+			if keepEmpty || (rval != nil && len(rval) > 0) {
 				cp[key] = rval
 			}
 		} else if ismap {
 			rval, _, _ := replaceDotMoveUndefined(valuemap, false)
-			if rval != nil && len(rval) > 0 {
+			if keepEmpty || (rval != nil && len(rval) > 0) {
 				cp[key] = rval
 			}
 		} else {
@@ -281,15 +284,15 @@ func replaceDotMoveUndefinedArray(inputs []interface{}) []interface{} {
 	cp := make([]interface{}, 0)
 	for _, input := range inputs {
 		valuemap, ismap := input.(map[string]interface{})
-		valuearraymap, isarraymap := input.([]interface{})
+		valuearray, isarray := input.([]interface{})
 		valuestring, isstring := input.(string)
 		if ismap {
 			rval, _, _ := replaceDotMoveUndefined(valuemap, false)
 			if rval != nil && len(rval) > 0 {
 				cp = append(cp, rval)
 			}
-		} else if isarraymap {
-			rval := replaceDotMoveUndefinedArray(valuearraymap)
+		} else if isarray {
+			rval := replaceDotMoveUndefinedArray(valuearray)
 			if rval != nil && len(rval) > 0 {
 				cp = append(cp, rval)
 			}
