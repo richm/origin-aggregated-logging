@@ -164,7 +164,7 @@ func onInit() {
 		undefined_dot_replace_char = undefined_config_obj.Undefined_dot_replace_char
 		undefined_max_num_fields = undefined_config_obj.Undefined_max_num_fields
 	} else if !strings.Contains(err.Error(), "no such file or directory") {
-		fmt.Fprintln(logfile, "ERROR: Could not open config file [%s]: [%v]", undefined_config, err)
+		fmt.Fprintf(logfile, "ERROR: Could not open config file [%s]: [%v]\n", undefined_config, err)
 		panic(fmt.Errorf("Could not open config file [%s]: [%v]", undefined_config, err))
 	}
 
@@ -198,7 +198,7 @@ func onInit() {
 		fmt.Fprintln(logfile, "mmexternal: default_keep_fields: ", default_keep_fields)
 		fmt.Fprintln(logfile, "mmexternal: extra_keep_fields: ", extra_keep_fields)
 		fmt.Fprintln(logfile, "mmexternal: undefined_name: ", undefined_name)
-		fmt.Fprintln(logfile, "mmexternal: keep_empty_fields: ", tmp_keep_empty_fields)
+		fmt.Fprintf(logfile, "mmexternal: keep_empty_fields: %v %v\n", tmp_keep_empty_fields, keep_empty_fields)
 		fmt.Fprintln(logfile, "mmexternal: undefined_to_string: ", undefined_to_string)
 		fmt.Fprintln(logfile, "mmexternal: undefined_dot_replace_char: ", undefined_dot_replace_char)
 		fmt.Fprintln(logfile, "mmexternal: undefined_max_num_fields: ", undefined_max_num_fields)
