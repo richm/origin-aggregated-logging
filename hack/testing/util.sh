@@ -433,6 +433,10 @@ function flush_fluentd_pos_files() {
     os::cmd::expect_success "oal_sudo rm -f /var/log/journal.pos /var/log/journal_pos.json"
 }
 
+function flush_rsyslog_pos_files() {
+    os::cmd::expect_success "oal_sudo rm -f /var/lib/rsyslog.pod/imfile-state* /var/lib/rsyslog.pod/imjournal.state"
+}
+
 # return 0 if given file has size ge given size, otherwise, return 1
 function file_has_size() {
     local f=$1
@@ -789,6 +793,32 @@ start_fluentd() {
     fi
     oc label node -l logging-infra-fluentd=false --overwrite logging-infra-fluentd=true
     os::cmd::try_until_text "oc get pods -l component=fluentd" "^(logging-)*fluentd-.* Running " $wait_time
+}
+
+stop_rsyslog() {
+    local rpod=${1:-$( get_running_pod rsyslog )}
+    local wait_time=${2:-$(( 2 * minute ))}
+
+    oc label node -l logging-infra-rsyslog=true --overwrite logging-infra-rsyslog=false
+    os::cmd::try_until_text "oc get $rsyslog_ds -o jsonpath='{ .status.numberReady }'" "0" $wait_time
+    # not sure if it is a bug or a flake, but sometimes .status.numberReady is 0, the rsyslog pod hangs around
+    # in the Terminating state for many seconds, which seems to cause problems with subsequent tests
+    # so, we have to wait for the pod to completely disappear - we cannot rely on .status.numberReady == 0
+    if [ -n "${rpod:-}" ] ; then
+        os::cmd::try_until_failure "oc get pod $rpod > /dev/null 2>&1" $wait_time
+    fi
+}
+
+start_rsyslog() {
+    local cleanfirst=${1:-false}
+    local wait_time=${2:-$(( 2 * minute ))}
+
+    if [ "$cleanfirst" != false ] ; then
+        flush_rsyslog_pos_files
+        oal_sudo rm -f /var/log/rsyslog/* /var/lib/rsyslog.pod/*
+    fi
+    oc label node -l logging-infra-rsyslog=false --overwrite logging-infra-rsyslog=true
+    os::cmd::try_until_text "oc get pods -l component=rsyslog" "^(logging-)*rsyslog-.* Running " $wait_time
 }
 
 get_fluentd_ds_name() {
