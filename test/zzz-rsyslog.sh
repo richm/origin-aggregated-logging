@@ -147,7 +147,7 @@ deploy_using_operators() {
     oc get cm rsyslog -o yaml | \
       sed -e 's/action(type="mmkubernetes"/action(type="mmkubernetes" annotation_match=["."]/' | \
       oc replace --force -f - 2>&1 | artifact_out
-    start_rsyslog
+    start_rsyslog cleanfirst
     rpod=$( get_running_pod rsyslog )
 }
 
