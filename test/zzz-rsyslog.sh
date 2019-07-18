@@ -142,7 +142,7 @@ deploy_using_operators() {
     sleep 10
     os::cmd::try_until_success "oc get cm rsyslog 2> /dev/null"
     stop_rsyslog $rpod
-    oc set env $rsyslog_ds RSYSLOG_JOURNAL_READ_FROM_TAIL=on RSYSLOG_FILE_READ_FROM_TAIL=on RSYSLOG_USE_IMPSTATS_JSON=true
+    oc set env $rsyslog_ds RSYSLOG_JOURNAL_READ_FROM_TAIL=on RSYSLOG_FILE_READ_FROM_TAIL=on RSYSLOG_USE_IMPSTATS_FILE=true
     # enable annotation_match
     oc get cm rsyslog -o yaml | \
       sed -e 's/action(type="mmkubernetes"/action(type="mmkubernetes" annotation_match=["."]/' | \
