@@ -210,7 +210,7 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 	has_undefined := false
 	cp := make(map[string]interface{})
 	for origkey, value := range input {
-		if len(origkey) == 0 {
+		if topPropLevel && len(origkey) == 0 {
 			continue
 		}
 		key := origkey
