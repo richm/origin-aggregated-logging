@@ -205,14 +205,11 @@ func onInit() {
 	}
 }
 
-func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (map[string]interface{}, bool, bool) {
+func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool, keepEmpty bool) (map[string]interface{}, bool, bool) {
 	replace_me := false
 	has_undefined := false
 	cp := make(map[string]interface{})
 	for origkey, value := range input {
-		if topPropLevel && len(origkey) == 0 {
-			continue
-		}
 		key := origkey
 		if topPropLevel && merge_json_log && undefined_dot_replace_char != "UNUSED" {
 			// replace '.' with specified char (e.g., '_')
@@ -224,21 +221,18 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 		// skip empty or not?
 		valuemap, ismap := value.(map[string]interface{})
 		valuearray, isarray := value.([]interface{})
-		var keepEmpty bool
 		if topPropLevel {
 			_, keepEmpty = keep_empty_fields[origkey]
-			if !keepEmpty {
-				valuestring, isstring := value.(string)
-				if (isarray && len(valuearray) == 0) ||
-					(ismap && len(valuemap) == 0) ||
-					(isstring && len(valuestring) == 0) ||
-					(value == nil) {
-					replace_me = true
-					continue
-				}
+		}
+		if !keepEmpty {
+			valuestring, isstring := value.(string)
+			if (isarray && len(valuearray) == 0) ||
+				(ismap && len(valuemap) == 0) ||
+				(isstring && len(valuestring) == 0) ||
+				(value == nil) {
+				replace_me = true
+				continue
 			}
-		} else {
-			keepEmpty = true // only check top level fields
 		}
 		// use_undefined and key is not in keep_fields?
 		_, keepit := keep_fields[origkey]
@@ -250,13 +244,13 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 					cp[undefined_name] = subcp
 				}
 				if isarray {
-					rval := replaceDotMoveUndefinedArray(valuearray)
+					rval := replaceDotMoveUndefinedArray(valuearray, keepEmpty)
 					if keepEmpty || len(rval) > 0 {
 						cp[undefined_name].(map[string]interface{})[key] = rval
 						undefined_cur_num_fields--
 					}
 				} else if ismap {
-					rval, _, _ := replaceDotMoveUndefined(valuemap, false)
+					rval, _, _ := replaceDotMoveUndefined(valuemap, false, keepEmpty)
 					if keepEmpty || len(rval) > 0 {
 						cp[undefined_name].(map[string]interface{})[key] = rval
 						undefined_cur_num_fields--
@@ -269,12 +263,12 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 				has_undefined = true
 			}
 		} else if isarray {
-			rval := replaceDotMoveUndefinedArray(valuearray)
+			rval := replaceDotMoveUndefinedArray(valuearray, keepEmpty)
 			if keepEmpty || (rval != nil && len(rval) > 0) {
 				cp[key] = rval
 			}
 		} else if ismap {
-			rval, _, _ := replaceDotMoveUndefined(valuemap, false)
+			rval, _, _ := replaceDotMoveUndefined(valuemap, false, keepEmpty)
 			if keepEmpty || (rval != nil && len(rval) > 0) {
 				cp[key] = rval
 			}
@@ -285,24 +279,26 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 	return cp, replace_me, has_undefined
 }
 
-func replaceDotMoveUndefinedArray(inputs []interface{}) []interface{} {
+func replaceDotMoveUndefinedArray(inputs []interface{}, keepEmpty bool) []interface{} {
 	cp := make([]interface{}, 0)
 	for _, input := range inputs {
 		valuemap, ismap := input.(map[string]interface{})
 		valuearray, isarray := input.([]interface{})
 		valuestring, isstring := input.(string)
 		if ismap {
-			rval, _, _ := replaceDotMoveUndefined(valuemap, false)
-			if rval != nil && len(rval) > 0 {
+			rval, _, _ := replaceDotMoveUndefined(valuemap, false, keepEmpty)
+			if keepEmpty || (rval != nil && len(rval) > 0) {
 				cp = append(cp, rval)
 			}
 		} else if isarray {
-			rval := replaceDotMoveUndefinedArray(valuearray)
-			if rval != nil && len(rval) > 0 {
+			rval := replaceDotMoveUndefinedArray(valuearray, keepEmpty)
+			if keepEmpty || (rval != nil && len(rval) > 0) {
 				cp = append(cp, rval)
 			}
-		} else if isstring && len(valuestring) > 0 {
-			cp = append(cp, input)
+		} else if isstring {
+			if keepEmpty || (len(valuestring) > 0) {
+				cp = append(cp, input)
+			}
 		} else if input != nil {
 			cp = append(cp, input)
 		}
@@ -346,7 +342,7 @@ func main() {
 			jsonCopyMap["$!"] = make(map[string]interface{})
 		}
 		undefined_cur_num_fields = undefined_max_num_fields
-		all, replace_me, has_undefined := replaceDotMoveUndefined(topval, true)
+		all, replace_me, has_undefined := replaceDotMoveUndefined(topval, true, false)
 		if !replace_me {
 			if undefined_debug {
 				fmt.Fprintln(logfile, "No Need to Replace for ", rawStr)

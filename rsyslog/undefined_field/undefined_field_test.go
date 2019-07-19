@@ -114,7 +114,7 @@ func TestKeepEmpty(t *testing.T) {
 		t.Errorf("json.Unmarshal failed for inputString [%v]: %v", inputString, err)
 	}
 	undefined_cur_num_fields = 99999999
-	outputMap, replaceMe, hasUndefined := replaceDotMoveUndefined(inputMap, true)
+	outputMap, replaceMe, hasUndefined := replaceDotMoveUndefined(inputMap, true, false)
 	outputBytes, err := json.Marshal(outputMap)
 	t.Logf("outputBytes [%s] replaceMe [%v] hasUndefined [%v]", outputBytes, replaceMe, hasUndefined)
 	fieldlist := []string{"@timestamp", "empty1", "undefined3", "undefined4", "undefined5"}
@@ -125,7 +125,6 @@ func TestKeepEmpty(t *testing.T) {
 	var val2 float64 = 2222
 	undefined2Map := map[string]interface{}{
 		"undefined2":  "undefined2",
-		"":            "",
 		"undefined22": val2,
 		"undefined23": false,
 	}
