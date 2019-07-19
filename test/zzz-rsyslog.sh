@@ -309,7 +309,7 @@ if [ $logsize -gt 0 ]; then
     oc exec $rpod -c logrotate -- /usr/bin/cat /var/lib/rsyslog.pod/logrotate.log 2>&1 | artifact_out
     artifact_log "=========="
     os::cmd::expect_success "test $filecount -le $maxcount"
-    os::cmd::expect_success "test $filesize -le $(( maxsize + 1024 ))"
+    os::cmd::expect_success "test $filesize -le $(( maxsize + 2048 ))"
 
     oc apply --force -f $savecm
 else
