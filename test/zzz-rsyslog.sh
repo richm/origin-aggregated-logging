@@ -9,6 +9,10 @@ os::util::environment::use_sudo
 
 os::test::junit::declare_suite_start "test/zzz-rsyslog"
 
+pushd ${OS_O_A_L_DIR}/rsyslog/undefined_field > /dev/null
+go test -v 2>&1 | artifact_out
+popd > /dev/null
+
 LOGGING_NS=${LOGGING_NS:-openshift-logging}
 es_pod=$( get_es_pod es )
 es_ops_pod=$( get_es_pod es-ops )
