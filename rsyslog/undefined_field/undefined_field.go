@@ -224,16 +224,21 @@ func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool) (m
 		// skip empty or not?
 		valuemap, ismap := value.(map[string]interface{})
 		valuearray, isarray := value.([]interface{})
-		_, keepEmpty := keep_empty_fields[origkey]
-		if !keepEmpty {
-			valuestring, isstring := value.(string)
-			if (isarray && len(valuearray) == 0) ||
-				(ismap && len(valuemap) == 0) ||
-				(isstring && len(valuestring) == 0) ||
-				(value == nil) {
-				replace_me = true
-				continue
+		var keepEmpty bool
+		if topPropLevel {
+			_, keepEmpty = keep_empty_fields[origkey]
+			if !keepEmpty {
+				valuestring, isstring := value.(string)
+				if (isarray && len(valuearray) == 0) ||
+					(ismap && len(valuemap) == 0) ||
+					(isstring && len(valuestring) == 0) ||
+					(value == nil) {
+					replace_me = true
+					continue
+				}
 			}
+		} else {
+			keepEmpty = true // only check top level fields
 		}
 		// use_undefined and key is not in keep_fields?
 		_, keepit := keep_fields[origkey]
