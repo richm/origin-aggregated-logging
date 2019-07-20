@@ -85,297 +85,392 @@ import (
 )
 
 const (
-	initial_logging_file_path = "/var/log/rsyslog/rsyslog.log"
-	default_undefined_config  = "/var/lib/rsyslog.pod/undefined.json"
-	noChanges                 = "{}"
+	initialLoggingFilePath = "/var/log/rsyslog/rsyslog.log"
+	defaultUndefinedConfig = "/var/lib/rsyslog.pod/undefined.json"
+	noChanges              = "{}"
 )
 
-type UndefinedConfig struct {
-	Debug                      bool   `json:"UNDEFINED_DEBUG"`
-	Merge_json_log             bool   `json:"MERGE_JSON_LOG"`
-	Use_undefined              bool   `json:"CDM_USE_UNDEFINED"`
-	Undefined_to_string        bool   `json:"CDM_UNDEFINED_TO_STRING"`
-	Default_keep_fields        string `json:"CDM_DEFAULT_KEEP_FIELDS"`
-	Extra_keep_fields          string `json:"CDM_EXTRA_KEEP_FIELDS"`
-	Undefined_name             string `json:"CDM_UNDEFINED_NAME"`
-	Keep_empty_fields          string `json:"CDM_KEEP_EMPTY_FIELDS"`
-	Undefined_dot_replace_char string `json:"CDM_UNDEFINED_DOT_REPLACE_CHAR"`
-	Undefined_max_num_fields   int64  `json:"CDM_UNDEFINED_MAX_NUM_FIELDS"`
+type undefinedConfig struct {
+	Debug                   bool   `json:"UNDEFINED_DEBUG"`
+	MergeJSONLog            bool   `json:"MERGE_JSON_LOG"`
+	UseUndefined            bool   `json:"CDM_USE_UNDEFINED"`
+	UndefinedToString       bool   `json:"CDM_UNDEFINED_TO_STRING"`
+	DefaultKeepFields       string `json:"CDM_DEFAULT_KEEP_FIELDS"`
+	ExtraKeepFields         string `json:"CDM_EXTRA_KEEP_FIELDS"`
+	UndefinedName           string `json:"CDM_UNDEFINED_NAME"`
+	KeepEmptyFields         string `json:"CDM_KEEP_EMPTY_FIELDS"`
+	UndefinedDotReplaceChar string `json:"CDM_UNDEFINED_DOT_REPLACE_CHAR"`
+	UndefinedMaxNumFields   int64  `json:"CDM_UNDEFINED_MAX_NUM_FIELDS"`
 }
 
 var (
-	undefined_debug            bool
-	merge_json_log             bool
-	use_undefined              bool
-	keep_fields                map[string]string
-	keep_empty_fields          map[string]string
-	undefined_name             string
-	undefined_to_string        bool
-	undefined_dot_replace_char string
-	undefined_max_num_fields   int64
-	undefined_cur_num_fields   int64
-	logfile                    *os.File
-	replacer                   = &strings.Replacer{}
-	undefined_config           string
+	keepFields        map[string]string
+	keepEmptyFields   map[string]string
+	logfile           *os.File
+	replacer          = &strings.Replacer{}
+	checkMaxNumFields bool
+	cfg               undefinedConfig
 )
-
-func getMapStringValue(m map[string]interface{}, key string) (string, bool) {
-	if val, ok := m[key]; ok {
-		return val.(string), ok
-	} else {
-		return "", ok
-	}
-}
 
 func onInit() {
 	// opening the rsyslog log file
-	logging_file_path := initial_logging_file_path
+	loggingFilePath := initialLoggingFilePath
 	if eval := os.Getenv("LOGGING_FILE_PATH"); eval != "" {
-		logging_file_path = eval
+		loggingFilePath = eval
 	}
-	if f, err := os.OpenFile(logging_file_path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+	if f, err := os.OpenFile(loggingFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 		logfile = f
 	} else {
-		panic(fmt.Errorf("Could not open file [%s]: [%v]", logging_file_path, err))
+		panic(fmt.Errorf("Could not open file [%s]: [%v]", loggingFilePath, err))
 	}
 
-	undefined_config = default_undefined_config
+	undefinedConfigFile := defaultUndefinedConfig
 	if eval := os.Getenv("UNDEFINED_CONFIG"); eval != "" {
-		undefined_config = eval
+		undefinedConfigFile = eval
 	}
-	var undefined_config_obj UndefinedConfig
-	var default_keep_fields string
-	var extra_keep_fields string
-	var tmp_keep_empty_fields string
-	if config, err := os.Open(undefined_config); err == nil {
+	if config, err := os.Open(undefinedConfigFile); err == nil {
 		defer config.Close()
-
-		config_read, _ := ioutil.ReadAll(config)
-		json.Unmarshal(config_read, &undefined_config_obj)
-
-		undefined_debug = undefined_config_obj.Debug
-		merge_json_log = undefined_config_obj.Merge_json_log
-		use_undefined = undefined_config_obj.Use_undefined
-		default_keep_fields = undefined_config_obj.Default_keep_fields
-		extra_keep_fields = undefined_config_obj.Extra_keep_fields
-		undefined_name = undefined_config_obj.Undefined_name
-		tmp_keep_empty_fields = undefined_config_obj.Keep_empty_fields
-		undefined_to_string = undefined_config_obj.Undefined_to_string
-		undefined_dot_replace_char = undefined_config_obj.Undefined_dot_replace_char
-		undefined_max_num_fields = undefined_config_obj.Undefined_max_num_fields
-	} else if !strings.Contains(err.Error(), "no such file or directory") {
-		fmt.Fprintf(logfile, "ERROR: Could not open config file [%s]: [%v]\n", undefined_config, err)
-		panic(fmt.Errorf("Could not open config file [%s]: [%v]", undefined_config, err))
+		configRead, _ := ioutil.ReadAll(config)
+		json.Unmarshal(configRead, &cfg)
+	} else if err != os.ErrNotExist {
+		fmt.Fprintf(logfile, "ERROR: Could not open config file [%s]: [%v]\n", undefinedConfigFile, err)
+		panic(fmt.Errorf("Could not open config file [%s]: [%v]", undefinedConfigFile, err))
 	}
 
-	if undefined_max_num_fields == -1 {
-		undefined_max_num_fields = int64(^uint(0) >> 1)
+	if cfg.UndefinedMaxNumFields == -1 {
+		checkMaxNumFields = false
+		cfg.UndefinedMaxNumFields = int64(^uint(0) >> 1)
+	} else {
+		checkMaxNumFields = true
 	}
-	if use_undefined {
-		tmp_default := strings.Split(default_keep_fields, ",")
-		tmp_extra := strings.Split(extra_keep_fields, ",")
-		keep_fields = make(map[string]string)
-		for _, str := range tmp_default {
-			keep_fields[str] = str
+	if cfg.UseUndefined {
+		tmpDefault := strings.Split(cfg.DefaultKeepFields, ",")
+		tmpExtra := strings.Split(cfg.ExtraKeepFields, ",")
+		keepFields = make(map[string]string)
+		for _, str := range tmpDefault {
+			keepFields[str] = str
 		}
-		for _, str := range tmp_extra {
-			keep_fields[str] = str
+		for _, str := range tmpExtra {
+			keepFields[str] = str
 		}
 	}
-	tmp := strings.Split(tmp_keep_empty_fields, ",")
-	keep_empty_fields = make(map[string]string)
+	tmp := strings.Split(cfg.KeepEmptyFields, ",")
+	keepEmptyFields = make(map[string]string)
 	for _, str := range tmp {
-		keep_empty_fields[str] = str
+		keepEmptyFields[str] = str
 	}
 
-	if undefined_dot_replace_char != "UNUSED" {
-		replacer = strings.NewReplacer(".", undefined_dot_replace_char)
+	if cfg.UndefinedDotReplaceChar != "UNUSED" {
+		replacer = strings.NewReplacer(".", cfg.UndefinedDotReplaceChar)
 	}
 
-	if undefined_debug {
-		fmt.Fprintln(logfile, "mmexternal: merge_json_log: ", merge_json_log)
-		fmt.Fprintln(logfile, "mmexternal: use_undefined: ", use_undefined)
-		fmt.Fprintln(logfile, "mmexternal: default_keep_fields: ", default_keep_fields)
-		fmt.Fprintln(logfile, "mmexternal: extra_keep_fields: ", extra_keep_fields)
-		fmt.Fprintln(logfile, "mmexternal: undefined_name: ", undefined_name)
-		fmt.Fprintf(logfile, "mmexternal: keep_empty_fields: %v %v\n", tmp_keep_empty_fields, keep_empty_fields)
-		fmt.Fprintln(logfile, "mmexternal: undefined_to_string: ", undefined_to_string)
-		fmt.Fprintln(logfile, "mmexternal: undefined_dot_replace_char: ", undefined_dot_replace_char)
-		fmt.Fprintln(logfile, "mmexternal: undefined_max_num_fields: ", undefined_max_num_fields)
+	if cfg.Debug {
+		fmt.Fprintln(logfile, "mmexternal: merge_json_log: ", cfg.MergeJSONLog)
+		fmt.Fprintln(logfile, "mmexternal: use_undefined: ", cfg.UseUndefined)
+		fmt.Fprintln(logfile, "mmexternal: default_keep_fields: ", cfg.DefaultKeepFields)
+		fmt.Fprintln(logfile, "mmexternal: extra_keep_fields: ", cfg.ExtraKeepFields)
+		fmt.Fprintln(logfile, "mmexternal: undefined_name: ", cfg.UndefinedName)
+		fmt.Fprintf(logfile, "mmexternal: keep_empty_fields: %v %v\n", cfg.KeepEmptyFields, keepEmptyFields)
+		fmt.Fprintln(logfile, "mmexternal: undefined_to_string: ", cfg.UndefinedToString)
+		fmt.Fprintln(logfile, "mmexternal: undefined_dot_replace_char: ", cfg.UndefinedDotReplaceChar)
+		fmt.Fprintln(logfile, "mmexternal: undefinedMaxNumFields: ", cfg.UndefinedMaxNumFields)
 	}
 }
 
-func replaceDotMoveUndefined(input map[string]interface{}, topPropLevel bool, keepEmpty bool) (map[string]interface{}, bool, bool) {
-	replace_me := false
-	has_undefined := false
-	cp := make(map[string]interface{})
-	for origkey, value := range input {
-		key := origkey
-		if topPropLevel && merge_json_log && undefined_dot_replace_char != "UNUSED" {
-			// replace '.' with specified char (e.g., '_')
-			key = replacer.Replace(origkey)
-			if key != origkey {
-				replace_me = true
+// This function has two purposes.
+// 1) Check if the number of undefined fields exceeds the maximum value, if any.
+//    If so, return a JSON string representation of a map of the undefined
+//    fields, suitable for returning in the record[$undefined] value, and
+//    the error, if any, returned from json.Marshal.
+// 2) If use_undefined is true, move the undefined fields to a separate
+//    map.
+// Return values:
+// * The JSON string representation of the map of the undefined fields if the
+//   undefined field count exceeded the max, or ""
+// * A map of the undefined fields if undefined field checking was enabled.
+//   Otherwise, nil.  Map may be empty if there were no undefined fields.
+// * err return from json.Marshal
+// Side effects:
+// The undefined fields are moved from the input map to the undefMap returned
+func processUndefinedAndMaxNumFields(input map[string]interface{}) (string, map[string]interface{}, error) {
+	if !checkMaxNumFields && !cfg.UseUndefined {
+		return "", nil, nil // not used
+	}
+	count := cfg.UndefinedMaxNumFields
+	var undefMap map[string]interface{}
+	for field, val := range input {
+		if _, keep := keepFields[field]; !keep {
+			if undefMap == nil {
+				undefMap = make(map[string]interface{})
+			}
+			undefMap[field] = val
+			count--
+		}
+	}
+	if undefMap == nil || len(undefMap) == 0 {
+		return "", nil, nil // no undefined fields
+	}
+	if count < 0 || cfg.UseUndefined {
+		for field := range undefMap {
+			delete(input, field)
+		}
+		if count < 0 {
+			// undefined fields converted to string - no undefMap
+			b, err := json.Marshal(undefMap)
+			return string(b), nil, err
+		}
+	}
+	return "", nil, nil
+}
+
+func isFieldUndefined(field string, hasDefinedFields, hasUndefinedFields bool) bool {
+	if !hasUndefinedFields {
+		return false // input contains only defined fields
+	} else if !hasDefinedFields {
+		return true // input contains only undefined fields
+	} else {
+		_, definedField := keepFields[field] // see if field is a keeper
+		return !definedField
+	}
+}
+
+func processUndefinedToString(input map[string]interface{}, field string, val interface{}) bool {
+	inputWasModified := false
+	if _, isstring := val.(string); !isstring {
+		var err error
+		input[field], err = json.Marshal(val) // replace val in-place
+		if err != nil {
+			if cfg.Debug {
+				fmt.Fprintf(logfile, "Could not convert field [%s] value [%v] to JSON string: %v\n", field, val, err)
+			}
+			// fallback
+			input[field] = fmt.Sprintf("%v", val) // replace val in-place
+		}
+		inputWasModified = true
+	}
+	return inputWasModified
+}
+
+func processDotReplaceChar(field string, replacedFields map[string]string) (string, map[string]string) {
+	newfield := replacer.Replace(field)
+	if newfield != field {
+		if replacedFields == nil {
+			replacedFields = make(map[string]string)
+		}
+		replacedFields[field] = newfield
+	}
+	return newfield, replacedFields
+}
+
+// a value is empty if
+// * it is nil
+// * it is an empty string
+// * it is a zero length array or map
+// * it is an array and all its elements are empty
+// * it is a map and all of its values are empty
+func isEmpty(val interface{}) bool {
+	switch tval := val.(type) {
+	case nil:
+		return true
+	case string:
+		return len(tval) == 0
+	case []interface{}:
+		return len(tval) == 0
+	case map[string]interface{}:
+		return len(tval) == 0
+	default:
+		return false // no other type can have an empty value
+	}
+}
+
+// go through val recursively deleting any empty elements found
+// returns the value with the empty elements removed
+func delEmpty(val interface{}) (interface{}, bool) {
+	changed := false
+	elemChanged := false
+	switch tval := val.(type) {
+	case []interface{}:
+		if len(tval) == 0 {
+			return val, changed
+		}
+		result := tval[:0]
+		for _, elem := range tval {
+			elem, elemChanged = delEmpty(elem)
+			if !isEmpty(elem) {
+				result = append(result, elem)
+				changed = true
+			}
+			if elemChanged {
+				changed = true
 			}
 		}
-		// skip empty or not?
-		valuemap, ismap := value.(map[string]interface{})
-		valuearray, isarray := value.([]interface{})
-		if topPropLevel {
-			_, keepEmpty = keep_empty_fields[origkey]
+		return result, changed
+	case map[string]interface{}:
+		if len(tval) == 0 {
+			return val, changed
 		}
+		for key, mapval := range tval {
+			mapval, elemChanged = delEmpty(mapval)
+			if isEmpty(mapval) {
+				delete(tval, key)
+				changed = true
+			} else {
+				tval[key] = mapval
+			}
+			if elemChanged {
+				changed = true
+			}
+		}
+		return val, changed
+	default:
+		return val, changed
+	}
+}
+
+// process the undefined fields - convert to string value, convert
+// "." in the field names to the undefined_dot_replace_char
+// also remove empty fields
+// The given input map may contain only undefined fields, or only
+// defined fields, or a mix of both
+// the given input map is modified in place
+// Returns false if the input was unchanged
+func processUndefinedAndEmpty(input map[string]interface{}, hasDefinedFields, hasUndefinedFields bool) bool {
+	var replacedFields map[string]string // map old to new name
+	inputWasModified := false
+	for field, val := range input {
+		newfield := field
+		if isFieldUndefined(field, hasDefinedFields, hasUndefinedFields) {
+			if cfg.UndefinedToString {
+				if processUndefinedToString(input, field, val) {
+					inputWasModified = true
+				}
+			}
+			if cfg.UndefinedDotReplaceChar != "UNUSED" && strings.Contains(field, ".") {
+				newfield, replacedFields = processDotReplaceChar(field, replacedFields)
+			}
+		}
+		// should be the newfield if using undefined_dot_replace_char
+		_, keepEmpty := keepEmptyFields[newfield]
 		if !keepEmpty {
-			valuestring, isstring := value.(string)
-			if (isarray && len(valuearray) == 0) ||
-				(ismap && len(valuemap) == 0) ||
-				(isstring && len(valuestring) == 0) ||
-				(value == nil) {
-				replace_me = true
-				continue
-			}
-		}
-		// use_undefined and key is not in keep_fields?
-		_, keepit := keep_fields[origkey]
-		if topPropLevel && use_undefined && !keepit {
-			// if undefined_max_num_fields > 0, move the undefined item to undefined_name
-			if undefined_cur_num_fields > 0 {
-				if cp[undefined_name] == nil {
-					subcp := make(map[string]interface{})
-					cp[undefined_name] = subcp
+			changed := false
+			val, changed = delEmpty(val)
+			if isEmpty(val) {
+				inputWasModified = true
+				delete(input, field)
+			} else {
+				input[field] = val
+				if changed {
+					inputWasModified = true
 				}
-				if isarray {
-					rval := replaceDotMoveUndefinedArray(valuearray, keepEmpty)
-					if keepEmpty || len(rval) > 0 {
-						cp[undefined_name].(map[string]interface{})[key] = rval
-						undefined_cur_num_fields--
-					}
-				} else if ismap {
-					rval, _, _ := replaceDotMoveUndefined(valuemap, false, keepEmpty)
-					if keepEmpty || len(rval) > 0 {
-						cp[undefined_name].(map[string]interface{})[key] = rval
-						undefined_cur_num_fields--
-					}
-				} else {
-					cp[undefined_name].(map[string]interface{})[key] = value
-					undefined_cur_num_fields--
-				}
-				replace_me = true
-				has_undefined = true
 			}
-		} else if isarray {
-			rval := replaceDotMoveUndefinedArray(valuearray, keepEmpty)
-			if keepEmpty || (rval != nil && len(rval) > 0) {
-				cp[key] = rval
-			}
-		} else if ismap {
-			rval, _, _ := replaceDotMoveUndefined(valuemap, false, keepEmpty)
-			if keepEmpty || (rval != nil && len(rval) > 0) {
-				cp[key] = rval
-			}
-		} else {
-			cp[key] = value
 		}
 	}
-	return cp, replace_me, has_undefined
-}
-
-func replaceDotMoveUndefinedArray(inputs []interface{}, keepEmpty bool) []interface{} {
-	cp := make([]interface{}, 0)
-	for _, input := range inputs {
-		valuemap, ismap := input.(map[string]interface{})
-		valuearray, isarray := input.([]interface{})
-		valuestring, isstring := input.(string)
-		if ismap {
-			rval, _, _ := replaceDotMoveUndefined(valuemap, false, keepEmpty)
-			if keepEmpty || (rval != nil && len(rval) > 0) {
-				cp = append(cp, rval)
-			}
-		} else if isarray {
-			rval := replaceDotMoveUndefinedArray(valuearray, keepEmpty)
-			if keepEmpty || (rval != nil && len(rval) > 0) {
-				cp = append(cp, rval)
-			}
-		} else if isstring {
-			if keepEmpty || (len(valuestring) > 0) {
-				cp = append(cp, input)
-			}
-		} else if input != nil {
-			cp = append(cp, input)
+	if replacedFields != nil && len(replacedFields) > 0 {
+		inputWasModified = true
+		for oldfield, newfield := range replacedFields {
+			input[newfield] = input[oldfield]
+			delete(input, oldfield)
 		}
 	}
-	return cp
+	return inputWasModified
 }
 
 func main() {
 
 	onInit()
 	defer logfile.Close()
-
-	reader := bufio.NewReader(os.Stdin)
+	var reader *bufio.Reader
+	var testInputFile *os.File
+	if ff := os.Getenv("TEST_INPUT_FILE"); ff != "" {
+		var err error
+		testInputFile, err = os.Open(ff)
+		if err != nil {
+			panic(fmt.Errorf("Could not open %v: %v", ff, err))
+		}
+		reader = bufio.NewReader(testInputFile)
+		defer testInputFile.Close()
+	} else {
+		reader = bufio.NewReader(os.Stdin)
+	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Split(bufio.ScanLines)
 
 	for scanner.Scan() {
-		jsonCopyMap := make(map[string]interface{})
 		jsonMap := make(map[string]interface{})
 		rawStr := scanner.Text()
-		if undefined_debug {
+		if cfg.Debug {
 			fmt.Fprintln(logfile, "Source: ", rawStr)
 		}
-		if err := json.Unmarshal([]byte(rawStr), &jsonMap); err != nil {
+		if err := json.Unmarshal(scanner.Bytes(), &jsonMap); err != nil {
 			fmt.Fprintln(logfile, "json.Unmarshal failed (", err, "): ", rawStr)
 			fmt.Println(noChanges)
 			continue
 		}
 		if jsonMap["$!"] == nil {
+			fmt.Fprintln(logfile, "Source contains no $! field: ", rawStr)
 			continue
 		}
 		topval, ismap := jsonMap["$!"].(map[string]interface{})
 		if !ismap {
-			if undefined_debug {
+			if cfg.Debug {
 				fmt.Fprintln(logfile, "Result is String: ", rawStr)
 			}
 			fmt.Println(noChanges)
 			continue
 		}
-		if jsonCopyMap["$!"] == nil {
-			jsonCopyMap["$!"] = make(map[string]interface{})
+		undefString, undefMap, err := processUndefinedAndMaxNumFields(topval)
+		if err != nil {
+			// error marshalling undefined fields to JSON
+			if cfg.Debug {
+				fmt.Fprintf(logfile, "Unable to convert undefined fields to JSON string: %v : rawStr: %s\n", err, rawStr)
+			}
+			fmt.Println(noChanges)
+			continue
 		}
-		undefined_cur_num_fields = undefined_max_num_fields
-		all, replace_me, has_undefined := replaceDotMoveUndefined(topval, true, false)
-		if !replace_me {
-			if undefined_debug {
+		changes := false
+		if len(undefString) > 0 || undefMap != nil {
+			changes = true
+		}
+		if undefMap != nil {
+			if processUndefinedAndEmpty(undefMap, false, true) {
+				changes = true
+			}
+		}
+		if len(topval) > 0 {
+			if processUndefinedAndEmpty(topval, true, (undefMap == nil)) {
+				changes = true
+			}
+		}
+		if !changes {
+			if cfg.Debug {
 				fmt.Fprintln(logfile, "No Need to Replace for ", rawStr)
 			}
 			fmt.Println(noChanges)
 			continue
 		}
-		jsonCopyMap["$!"].(map[string]interface{})["openshift_logging_all"] = all
-		if tmp_val, err := json.Marshal(jsonCopyMap); err == nil {
-			if use_undefined && undefined_to_string && has_undefined {
-				if err := json.Unmarshal([]byte(tmp_val), &jsonCopyMap); err == nil {
-					// if unmarshal fails, giving up converting to string...
-					if undefined, err := json.Marshal(jsonCopyMap[undefined_name]); err == nil {
-						jsonCopyMap[undefined_name] = string(undefined)
-						if tmp_val0, err := json.Marshal(jsonCopyMap); err == nil {
-							tmp_val = tmp_val0
-						} else {
-							fmt.Fprintln(logfile, "Marshaling undefined value converted to string failed (", err, "): ", tmp_val)
-						}
-					} else {
-						fmt.Fprintln(logfile, "Marshaling undefined value failed (", err, "): ", tmp_val)
-					}
-				} else {
-					fmt.Fprintln(logfile, "Parsing processed json failed (", err, "): ", tmp_val)
-				}
+		if len(undefString) > 0 {
+			topval[cfg.UndefinedName] = undefString
+		} else if undefMap != nil && len(undefMap) > 0 {
+			// if len is 0, means all fields were empty
+			topval[cfg.UndefinedName] = undefMap
+		}
+		loggingAll := map[string]interface{}{
+			"openshift_logging_all": topval,
+		}
+		outputMap := map[string]interface{}{
+			"$!": loggingAll,
+		}
+		outputString, err := json.Marshal(outputMap)
+		if err != nil {
+			if cfg.Debug {
+				fmt.Fprintln(logfile, "Final Marshal failed (", err, "): ", rawStr)
 			}
-			if undefined_debug {
-				fmt.Fprintln(logfile, "Result: ", string(tmp_val))
-			}
-			fmt.Println(string(tmp_val))
-		} else {
-			fmt.Fprintln(logfile, "Final Marshal failed (", err, "): ", rawStr)
 			fmt.Println(noChanges)
+		} else {
+			if cfg.Debug {
+				fmt.Fprintln(logfile, "Result: ", string(outputString))
+			}
+			fmt.Println(string(outputString))
 		}
 	}
 }

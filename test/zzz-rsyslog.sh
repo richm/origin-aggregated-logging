@@ -428,7 +428,7 @@ os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-
 
 artifact_log "7. set CDM_UNDEFINED_MAX_NUM_FIELDS to 3"
 stop_rsyslog $rpod
-oc set env $rsyslog_ds CDM_EXTRA_KEEP_FIELDS=undefined4,undefined5,empty1,undefined3,$keep_fields CDM_KEEP_EMPTY_FIELDS=undefined4,undefined5,empty1,undefined3 CMERGE_JSON_LOG=true DM_UNDEFINED_DOT_REPLACE_CHAR=_ CDM_UNDEFINED_MAX_NUM_FIELDS=3 2>&1 | artifact_out
+oc set env $rsyslog_ds CDM_EXTRA_KEEP_FIELDS=undefined4,undefined5,empty1,undefined3,$keep_fields CDM_KEEP_EMPTY_FIELDS=undefined4,undefined5,empty1,undefined3 MERGE_JSON_LOG=true CDM_UNDEFINED_DOT_REPLACE_CHAR=_ CDM_UNDEFINED_MAX_NUM_FIELDS=3 2>&1 | artifact_out
 start_rsyslog
 rpod=$( get_running_pod rsyslog )
 
@@ -438,4 +438,3 @@ os::cmd::expect_success "cat $ops | python $OS_O_A_L_DIR/hack/testing/test-viaq-
 
 os::cmd::expect_success "oc exec $rpod -c rsyslog -- ls -l /var/log/rsyslog/rsyslog.log"
 os::cmd::expect_failure "oc exec $rpod -c rsyslog -- grep 'panic: interface conversion' /var/log/rsyslog/rsyslog.log"
-
