@@ -234,21 +234,29 @@ func isFieldUndefined(field string, hasDefinedFields, hasUndefinedFields bool) b
 	}
 }
 
-func processUndefinedToString(input map[string]interface{}, field string, val interface{}) bool {
+// convert the given field value to a string if not already a string
+// modifies the value in input in place - if the returned bool is
+// true, the field value was changed, and the new value is returned in the
+// interface{} return value
+func processUndefinedToString(input map[string]interface{}, field string, val interface{}) (interface{}, bool) {
 	inputWasModified := false
+	var newval string
 	if _, isstring := val.(string); !isstring {
-		var err error
-		input[field], err = json.Marshal(val) // replace val in-place
-		if err != nil {
+		bval, err := json.Marshal(val) // convert to JSON string
+		if err == nil {
+			newval = string(bval)
+			input[field] = newval // replace val in-place
+		} else {
 			if cfg.Debug {
 				fmt.Fprintf(logfile, "Could not convert field [%s] value [%v] to JSON string: %v\n", field, val, err)
 			}
 			// fallback
-			input[field] = fmt.Sprintf("%v", val) // replace val in-place
+			newval = fmt.Sprintf("%v", val)
+			input[field] = newval // replace val in-place
 		}
 		inputWasModified = true
 	}
-	return inputWasModified
+	return newval, inputWasModified
 }
 
 func processDotReplaceChar(field string, replacedFields map[string]string) (string, map[string]string) {
@@ -342,8 +350,10 @@ func processUndefinedAndEmpty(input map[string]interface{}, hasDefinedFields, ha
 		newfield := field
 		if isFieldUndefined(field, hasDefinedFields, hasUndefinedFields) {
 			if cfg.UndefinedToString {
-				if processUndefinedToString(input, field, val) {
+				newval, changed := processUndefinedToString(input, field, val)
+				if changed {
 					inputWasModified = true
+					val = newval // use new val now
 				}
 			}
 			if cfg.UndefinedDotReplaceChar != "UNUSED" && strings.Contains(field, ".") {

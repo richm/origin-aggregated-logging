@@ -208,3 +208,92 @@ func TestUndefinedMaxNumFields(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestUndefinedToString(t *testing.T) {
+	testcfg := undefinedConfig{
+		Debug:                   true,
+		MergeJSONLog:            true,
+		UseUndefined:            true,
+		UndefinedToString:       true,
+		DefaultKeepFields:       "method,statusCode,type,@timestamp,req,res,CONTAINER_NAME,CONTAINER_ID_FULL",
+		ExtraKeepFields:         "undefined4,undefined5,empty1,undefined3",
+		UndefinedName:           "undefined",
+		KeepEmptyFields:         "undefined4,undefined5,empty1,undefined3",
+		UndefinedDotReplaceChar: "UNUSED",
+		UndefinedMaxNumFields:   -1,
+	}
+	err := setup(t, testcfg)
+	defer teardown(t)
+	if err != nil {
+		t.Errorf("test setup failed: %v", err)
+	}
+	inputString := `{"@timestamp": "2019-07-17T21:26:45.913217+00:00", ` +
+		`"undefined1": "undefined1", "undefined11": 1111, "undefined12": true, "empty1": "", ` +
+		`"undefined2": { "undefined2": "undefined2", "": "", "undefined22": 2222, "undefined23": false }, ` +
+		`"undefinedary": ["a",1,false,{"b":"c"},["d",2,true,{"e":"f"}]],` +
+		`"undefined3": { "emptyvalue": "" }, "undefined4": {}, "undefined5": "undefined5", ` +
+		`"undefined.6": "undefined6" }`
+	expectedOutputString := `{"@timestamp": "2019-07-17T21:26:45.913217+00:00", ` +
+		`"undefined1": "undefined1", "undefined11": "1111", "undefined12": "true", "empty1": "", ` +
+		`"undefined2": "{ \"undefined2\": \"undefined2\", \"\": \"\", \"undefined22\": 2222, \"undefined23\": false }", ` +
+		`"undefinedary": "[\"a\",1,false,{\"b\":\"c\"},[\"d\",2,true,{\"e\":\"f\"}]]",` +
+		`"undefined3": { "emptyvalue": "" }, "undefined4": {}, "undefined5": "undefined5", ` +
+		`"undefined.6": "undefined6" }`
+	inputMap := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(inputString), &inputMap); err != nil {
+		t.Errorf("json.Unmarshal failed for inputString [%v]: %v", inputString, err)
+	}
+	origMap := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(inputString), &origMap); err != nil {
+		t.Errorf("json.Unmarshal failed for inputString [%v]: %v", inputString, err)
+	}
+	changed := processUndefinedAndEmpty(inputMap, true, true)
+	if !changed {
+		t.Errorf("Expected changes not performed on the input")
+	}
+	outputBytes, _ := json.Marshal(inputMap)
+	t.Logf("outputBytes [%s]", outputBytes)
+	expectedOutputMap := make(map[string]interface{})
+	if err = json.Unmarshal([]byte(expectedOutputString), &expectedOutputMap); err != nil {
+		t.Errorf("Could not convert expectedOutputString [%s] to map: %v", expectedOutputString, err)
+	}
+	t.Logf("using s [%s] using v [%v]", expectedOutputMap, expectedOutputMap)
+	expectedUndef2 := expectedOutputMap["undefined2"]
+	delete(expectedOutputMap, "undefined2")
+	expectedUndefAryStr := expectedOutputMap["undefinedary"]
+	delete(expectedOutputMap, "undefinedary")
+	actualUndef2 := inputMap["undefined2"]
+	delete(inputMap, "undefined2")
+	actualUndefAryStr := inputMap["undefinedary"]
+	delete(inputMap, "undefinedary")
+	t.Logf("expected undef2 [%s] undefary [%s] actual undef2 [%s] undefary [%s]", expectedUndef2, expectedUndefAryStr, actualUndef2, actualUndefAryStr)
+
+	if !reflect.DeepEqual(expectedOutputMap, inputMap) {
+		t.Errorf("expected [%s] does not match actual [%s]", expectedOutputString, outputBytes)
+	}
+
+	expectedUndef2Map := make(map[string]interface{})
+	if err = json.Unmarshal([]byte(expectedUndef2.(string)), &expectedUndef2Map); err != nil {
+		t.Errorf("Could not convert expectedUndef2 [%s] to map: %v", expectedUndef2, err)
+	}
+	actualUndef2Map := make(map[string]interface{})
+	if err = json.Unmarshal([]byte(actualUndef2.(string)), &actualUndef2Map); err != nil {
+		t.Errorf("Could not convert actualUndef2 [%s] to map: %v", actualUndef2, err)
+	}
+	if !reflect.DeepEqual(expectedUndef2Map, actualUndef2Map) {
+		t.Errorf("field undefined2 expected [%s] does not match actual [%s]", expectedUndef2, actualUndef2)
+	}
+
+	var expectedUndefAry []interface{}
+	if err = json.Unmarshal([]byte(expectedUndefAryStr.(string)), &expectedUndefAry); err != nil {
+		t.Errorf("Could not convert expectedUndefAryStr [%s] to array: %v", expectedUndefAryStr, err)
+	}
+	var actualUndefAry []interface{}
+	if err = json.Unmarshal([]byte(actualUndefAryStr.(string)), &actualUndefAry); err != nil {
+		t.Errorf("Could not convert actualUndefAryStr [%s] to array: %v", actualUndefAryStr, err)
+	}
+	if !reflect.DeepEqual(expectedUndefAry, actualUndefAry) {
+		t.Errorf("field undefinedary expected [%s] does not match actual [%s]", expectedUndefAryStr, actualUndefAryStr)
+	}
+
+}
