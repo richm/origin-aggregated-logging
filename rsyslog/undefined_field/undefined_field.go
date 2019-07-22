@@ -298,6 +298,7 @@ func delEmpty(val interface{}) (interface{}, bool) {
 			elem, elemChanged = delEmpty(elem)
 			if !isEmpty(elem) {
 				result = append(result, elem)
+			} else {
 				changed = true
 			}
 			if elemChanged {
