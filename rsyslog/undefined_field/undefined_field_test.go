@@ -185,6 +185,15 @@ func TestUndefinedMaxNumFields(t *testing.T) {
 	if err = checkFieldsEqual(t, origMap, inputMap, fieldlist); err != nil {
 		t.Error(err)
 	}
+	if undefMap != nil {
+		t.Error("The undefMap is supposed to be nil")
+	}
+	// convert undefString back to map for comparison purposes
+	undefMap = make(map[string]interface{})
+	err = json.Unmarshal([]byte(undefString), &undefMap)
+	if err != nil {
+		t.Errorf("Could not convert undefString [%s] back to map: %v", undefString, err)
+	}
 	var val1 float64 = 1111
 	var val2 float64 = 2222
 	undefined2Map := map[string]interface{}{
