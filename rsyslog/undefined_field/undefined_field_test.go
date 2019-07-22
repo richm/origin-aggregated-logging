@@ -158,7 +158,9 @@ func TestUndefinedMaxNumFields(t *testing.T) {
 		UndefinedName:           "undefined",
 		KeepEmptyFields:         "undefined4,undefined5,empty1,undefined3",
 		UndefinedDotReplaceChar: "UNUSED",
-		UndefinedMaxNumFields:   1,
+		// the test should have 5 undefined fields - if UndefinedMaxNumFields == number of undefined fields - 1
+		// this allows us to check for off-by-one errors as well
+		UndefinedMaxNumFields: 4,
 	}
 	err := setup(t, cfg)
 	defer teardown(t)
@@ -178,9 +180,13 @@ func TestUndefinedMaxNumFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(inputString), &origMap); err != nil {
 		t.Errorf("json.Unmarshal failed for inputString [%v]: %v", inputString, err)
 	}
+	expectedUndefString := `{"undefined.6":"undefined6","undefined1":"undefined1","undefined11":1111,"undefined12":true,"undefined2":{"":"","undefined2":"undefined2","undefined22":2222,"undefined23":false}}`
 	undefString, undefMap, _ := processUndefinedAndMaxNumFields(inputMap)
 	outputBytes, _ := json.Marshal(inputMap)
 	t.Logf("outputBytes [%s] undefString [%s] undefMap [%v]", outputBytes, undefString, undefMap)
+	if undefMap != nil {
+		t.Errorf("undefMap should be nil but has value %v", undefMap)
+	}
 	fieldlist := []string{"@timestamp", "empty1", "undefined3", "undefined4", "undefined5"}
 	if err = checkFieldsEqual(t, origMap, inputMap, fieldlist); err != nil {
 		t.Error(err)
@@ -190,26 +196,15 @@ func TestUndefinedMaxNumFields(t *testing.T) {
 	}
 	// convert undefString back to map for comparison purposes
 	undefMap = make(map[string]interface{})
-	err = json.Unmarshal([]byte(undefString), &undefMap)
-	if err != nil {
+	if err = json.Unmarshal([]byte(undefString), &undefMap); err != nil {
 		t.Errorf("Could not convert undefString [%s] back to map: %v", undefString, err)
 	}
-	var val1 float64 = 1111
-	var val2 float64 = 2222
-	undefined2Map := map[string]interface{}{
-		"undefined2":  "undefined2",
-		"undefined22": val2,
-		"undefined23": false,
-	}
-	undefinedMap := map[string]interface{}{
-		"undefined1":  "undefined1",
-		"undefined11": val1,
-		"undefined12": true,
-		"undefined2":  undefined2Map,
-		"undefined.6": "undefined6",
+	expectedUndefMap := make(map[string]interface{})
+	if err = json.Unmarshal([]byte(expectedUndefString), &expectedUndefMap); err != nil {
+		t.Errorf("Could not convert expectedUndefString [%s] back to map: %v", expectedUndefString, err)
 	}
 	fieldlist = []string{"undefined1", "undefined11", "undefined12", "undefined2", "undefined.6"}
-	if err = checkFieldsEqual(t, undefinedMap, inputMap, fieldlist); err != nil {
+	if err = checkFieldsEqual(t, expectedUndefMap, undefMap, fieldlist); err != nil {
 		t.Error(err)
 	}
 }
