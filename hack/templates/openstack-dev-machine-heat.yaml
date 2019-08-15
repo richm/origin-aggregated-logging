@@ -68,11 +68,14 @@ resources:
           - docker
           - java-headless
           - golang
+          - golang-bin
           - iptables-services
           - NetworkManager
           - origin-clients
           - skopeo
           - podman
+          - gcc-c++
+          - libvirt-devel
         write_files:
           - path: /etc/sudoers.d/999-cloud-init-requiretty
             owner: root:root
@@ -103,6 +106,7 @@ resources:
               git clone https://github.com/openshift/elasticsearch-operator --recurse-submodules
               git clone https://github.com/openshift/cluster-logging-operator --recurse-submodules
               git clone https://github.com/openshift/release --recurse-submodules
+              git clone https://github.com/openshift/installer --recurse-submodules
               cd $home
               GOPATH=$home/go go get -u github.com/openshift/imagebuilder/cmd/imagebuilder
               chown -R fedora .
@@ -150,6 +154,9 @@ resources:
         - network: { get_param: public_network }
       user_data_format: RAW
       user_data: { get_resource: oshift_boot_config }
+      block_device_mapping:
+        - device_name: vda
+          volume_size: 200
 
 outputs:
   instance_name:
