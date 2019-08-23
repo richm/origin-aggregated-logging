@@ -76,6 +76,7 @@ resources:
           - podman
           - gcc-c++
           - libvirt-devel
+          - python2-yaml
         write_files:
           - path: /etc/sudoers.d/999-cloud-init-requiretty
             owner: root:root
