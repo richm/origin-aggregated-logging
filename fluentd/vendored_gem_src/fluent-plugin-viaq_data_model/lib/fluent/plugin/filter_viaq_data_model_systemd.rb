@@ -21,25 +21,28 @@ require 'date'
 module ViaqDataModelFilterSystemd
   # map of journal fields to viaq data model field
   JOURNAL_FIELD_MAP_SYSTEMD_T = {
-    "_AUDIT_LOGINUID"    => "AUDIT_LOGINUID",
-    "_AUDIT_SESSION"     => "AUDIT_SESSION",
-    "_BOOT_ID"           => "BOOT_ID",
-    "_CAP_EFFECTIVE"     => "CAP_EFFECTIVE",
-    "_CMDLINE"           => "CMDLINE",
-    "_COMM"              => "COMM",
-    "_EXE"               => "EXE",
-    "_GID"               => "GID",
-    "_MACHINE_ID"        => "MACHINE_ID",
-    "_PID"               => "PID",
-    "_SELINUX_CONTEXT"   => "SELINUX_CONTEXT",
-    "_SYSTEMD_CGROUP"    => "SYSTEMD_CGROUP",
-    "_SYSTEMD_OWNER_UID" => "SYSTEMD_OWNER_UID",
-    "_SYSTEMD_SESSION"   => "SYSTEMD_SESSION",
-    "_SYSTEMD_SLICE"     => "SYSTEMD_SLICE",
-    "_SYSTEMD_UNIT"      => "SYSTEMD_UNIT",
-    "_SYSTEMD_USER_UNIT" => "SYSTEMD_USER_UNIT",
-    "_TRANSPORT"         => "TRANSPORT",
-    "_UID"               => "UID"
+    "_AUDIT_LOGINUID"        => "AUDIT_LOGINUID",
+    "_AUDIT_SESSION"         => "AUDIT_SESSION",
+    "_BOOT_ID"               => "BOOT_ID",
+    "_CAP_EFFECTIVE"         => "CAP_EFFECTIVE",
+    "_CMDLINE"               => "CMDLINE",
+    "_COMM"                  => "COMM",
+    "_EXE"                   => "EXE",
+    "_GID"                   => "GID",
+    "_LINE_BREAK"            => "LINE_BREAK",
+    "_MACHINE_ID"            => "MACHINE_ID",
+    "_PID"                   => "PID",
+    "_SELINUX_CONTEXT"       => "SELINUX_CONTEXT",
+    "_STREAM_ID"             => "STREAM_ID",
+    "_SYSTEMD_CGROUP"        => "SYSTEMD_CGROUP",
+    "_SYSTEMD_INVOCATION_ID" => "SYSTEMD_INVOCATION_ID",
+    "_SYSTEMD_OWNER_UID"     => "SYSTEMD_OWNER_UID",
+    "_SYSTEMD_SESSION"       => "SYSTEMD_SESSION",
+    "_SYSTEMD_SLICE"         => "SYSTEMD_SLICE",
+    "_SYSTEMD_UNIT"          => "SYSTEMD_UNIT",
+    "_SYSTEMD_USER_UNIT"     => "SYSTEMD_USER_UNIT",
+    "_TRANSPORT"             => "TRANSPORT",
+    "_UID"                   => "UID"
   }
 
   JOURNAL_FIELD_MAP_SYSTEMD_U = {
@@ -65,7 +68,7 @@ module ViaqDataModelFilterSystemd
 
   JOURNAL_TIME_FIELDS = ['_SOURCE_REALTIME_TIMESTAMP', '__REALTIME_TIMESTAMP']
 
-  def process_journal_fields(tag, time, record, fmtr_type)
+  def process_journal_fields(tag, time, record, fmtr)
     systemd_t = {}
     JOURNAL_FIELD_MAP_SYSTEMD_T.each do |jkey, key|
       if record.key?(jkey)
@@ -93,7 +96,7 @@ module ViaqDataModelFilterSystemd
     unless systemd_k.empty?
       (record['systemd'] ||= {})['k'] = systemd_k
     end
-    record['level'] = normalize_level(record['level'], nil, nil, record['PRIORITY'])
+    record['level'] = normalize_level(record['level'], nil, record['PRIORITY'])
     JOURNAL_TIME_FIELDS.each do |field|
       if (val = record[field])
         vali = val.to_i
@@ -101,7 +104,7 @@ module ViaqDataModelFilterSystemd
         break
       end
     end
-    case fmtr_type
+    case fmtr.type
     when :sys_journal
       record['message'] = record['MESSAGE']
       if record['_HOSTNAME'].eql?('localhost') && @docker_hostname
@@ -133,7 +136,7 @@ module ViaqDataModelFilterSystemd
       else
         record['hostname'] = record['_HOSTNAME']
       end
-      transform_eventrouter(tag, record)
+      transform_eventrouter(tag, record, fmtr)
     end
   end
 end

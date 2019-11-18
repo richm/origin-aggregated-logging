@@ -23,7 +23,7 @@ rubygem-fluent-plugin-record-modifier 2.0.1 https://github.com/repeatedly/fluent
 rubygem-fluent-plugin-remote-syslog 1.1 https://github.com/docebo/fluent-plugin-remote-syslog
 rubygem-fluent-plugin-rewrite-tag-filter 2.2.0 https://github.com/fluent/fluent-plugin-rewrite-tag-filter
 rubygem-fluent-plugin-systemd 1.0.2 https://github.com/reevoo/fluent-plugin-systemd
-rubygem-fluent-plugin-viaq_data_model 0.0.18 https://github.com/ViaQ/fluent-plugin-viaq_data_model
+rubygem-fluent-plugin-viaq_data_model 0.0.22 https://github.com/ViaQ/fluent-plugin-viaq_data_model
 rubygem-http 0.9.8 https://github.com/httprb/http.rb
 rubygem-http-cookie 1.0.3 https://github.com/sparklemotion/http-cookie
 rubygem-http-form_data 1.0.3 https://github.com/httprb/form_data.rb

@@ -119,6 +119,8 @@ module Fluent
       config_param :tag, :string
       desc 'remove these keys from the record - same as record_transformer "remove_keys" field'
       config_param :remove_keys, :string, default: nil
+      desc 'enable/disable processing of kubernetes events'
+      config_param :process_kubernetes_events, :bool, default: nil
     end
 
     desc 'Which part of the pipeline is this - collector, normalizer, etc. for pipeline_metadata'
@@ -133,6 +135,8 @@ module Fluent
     #   tag "**"
     #   name_type project_full
     # </elasticsearch_index_name>
+    # audit_full - ".audit.YYYY.MM.DD"
+    # audit_prefix - ".audit"
     # operations_full - ".operations.YYYY.MM.DD"
     # operations_prefix - ".operations"
     # project_full - "project.${kubernetes.namespace_name}.${kubernetes.namespace_id}.YYYY.MM.DD"
@@ -146,7 +150,7 @@ module Fluent
       desc 'create index names for records with this tag pattern'
       config_param :tag, :string
       desc 'type of index name to create'
-      config_param :name_type, :enum, list: [:operations_full, :project_full, :operations_prefix, :project_prefix]
+      config_param :name_type, :enum, list: [:operations_full, :project_full, :operations_prefix, :project_prefix, :audit_full, :audit_prefix]
     end
     desc 'Store the Elasticsearch index name in this field'
     config_param :elasticsearch_index_name_field, :string, default: 'viaq_index_name'
@@ -178,7 +182,6 @@ module Fluent
         @formatters.each do |fmtr|
           matcher = ViaqMatchClass.new(fmtr.tag, nil)
           fmtr.instance_eval{ @params[:matcher] = matcher }
-          fmtr.instance_eval{ @params[:fmtr_type] = fmtr.type }
           if fmtr.remove_keys
             fmtr.instance_eval{ @params[:fmtr_remove_keys] = fmtr.remove_keys.split(',') }
           else
@@ -193,6 +196,8 @@ module Fluent
             fmtr_func = method(:process_k8s_json_file_fields)
           end
           fmtr.instance_eval{ @params[:fmtr_func] = fmtr_func }
+          proc_k8s_ev = fmtr.process_kubernetes_events.nil? ? @process_kubernetes_events : fmtr.process_kubernetes_events
+          fmtr.instance_eval{ @params[:process_kubernetes_events] = proc_k8s_ev }
         end
         @formatter_cache = {}
         @formatter_cache_nomatch = {}
@@ -200,10 +205,15 @@ module Fluent
       begin
         @docker_hostname = File.open('/etc/docker-hostname') { |f| f.readline }.rstrip
       rescue
-        @docker_hostname = nil
+        @docker_hostname = ENV['NODE_NAME'] || nil
       end
       @ipaddr4 = ENV['IPADDR4'] || '127.0.0.1'
-      @ipaddr6 = ENV['IPADDR6'] || '::1'
+      @ipaddr6 = nil
+
+      if ENV['IPADDR6'] && ENV['IPADDR6'].length > 0
+        @ipaddr6 = ENV['IPADDR6']
+      end
+      
       @pipeline_version = (ENV['FLUENTD_VERSION'] || 'unknown fluentd version') + ' ' + (ENV['DATA_VERSION'] || 'unknown data version')
       # create the elasticsearch index name tag matchers
       unless @elasticsearch_index_names.empty?
@@ -280,7 +290,7 @@ module Fluent
       '8' => 'trace',
       '9' => 'unknown',
     }
-    def normalize_level(level, newlevel, stream=nil, priority=nil)
+    def normalize_level(level, newlevel, priority=nil)
       # if the record already has a level field, and it looks like one of our well
       # known values, convert it to the canonical normalized form - otherwise,
       # preserve the value in string format
@@ -290,10 +300,6 @@ module Fluent
                (level.respond_to?(:downcase) && (retlevel = NORMAL_LEVELS[level.downcase]))
           retlevel = level.to_s # don't know what it is - just convert to string
         end
-      elsif stream == 'stdout'
-        retlevel = 'info'
-      elsif stream == 'stderr'
-        retlevel = 'err'
       elsif !priority.nil?
         retlevel = PRIORITY_LEVELS[priority]
       else
@@ -302,7 +308,7 @@ module Fluent
       retlevel || 'unknown'
     end
 
-    def process_sys_var_log_fields(tag, time, record, fmtr_type = nil)
+    def process_sys_var_log_fields(tag, time, record, fmtr = nil)
       record['systemd'] = {"t" => {"PID" => record['pid']}, "u" => {"SYSLOG_IDENTIFIER" => record['ident']}}
       if record[@dest_time_name].nil? # e.g. already has @timestamp
         # handle the case where the time reported in /var/log/messages is for a previous year
@@ -319,9 +325,9 @@ module Fluent
       end
     end
 
-    def process_k8s_json_file_fields(tag, time, record, fmtr_type = nil)
+    def process_k8s_json_file_fields(tag, time, record, fmtr = nil)
       record['message'] = record['message'] || record['log']
-      record['level'] = normalize_level(record['level'], nil, record['stream'])
+      record['level'] = normalize_level(record['level'], nil)
       if record.key?('kubernetes') && record['kubernetes'].respond_to?(:fetch) && \
          (k8shost = record['kubernetes'].fetch('host', nil))
         record['hostname'] = k8shost
@@ -338,7 +344,7 @@ module Fluent
         end
         record['time'] = rectime.utc.to_datetime.rfc3339(6)
       end
-      transform_eventrouter(tag, record)
+      transform_eventrouter(tag, record, fmtr)
     end
 
     def check_for_match_and_format(tag, time, record)
@@ -354,7 +360,7 @@ module Fluent
           return
         end
       end
-      fmtr.fmtr_func.call(tag, time, record, fmtr.fmtr_type)
+      fmtr.fmtr_func.call(tag, time, record, fmtr)
 
       if record[@dest_time_name].nil? && record['time'].nil?
         record['time'] = Time.at(time).utc.to_datetime.rfc3339(6)
@@ -371,7 +377,9 @@ module Fluent
       # this will catch the case where pipeline_type doesn't exist, or is not a Hash
       record['pipeline_metadata'][pipeline_type] = {} unless record['pipeline_metadata'][pipeline_type].respond_to?(:fetch)
       record['pipeline_metadata'][pipeline_type]['ipaddr4'] = @ipaddr4
-      record['pipeline_metadata'][pipeline_type]['ipaddr6'] = @ipaddr6
+      if @ipaddr6
+        record['pipeline_metadata'][pipeline_type]['ipaddr6'] = @ipaddr6
+      end
       record['pipeline_metadata'][pipeline_type]['inputname'] = 'fluent-plugin-systemd'
       record['pipeline_metadata'][pipeline_type]['name'] = 'fluentd'
       record['pipeline_metadata'][pipeline_type]['received_at'] = Time.now.utc.to_datetime.rfc3339(6)
@@ -384,7 +392,7 @@ module Fluent
         if ein.matcher.match(tag)
           found = true
           return unless ein.enabled
-          if ein.name_type == :operations_full || ein.name_type == :project_full
+          if ein.name_type == :operations_full || ein.name_type == :project_full || ein.name_type == :audit_full
             field_name = @elasticsearch_index_name_field
             need_time = true
           else
@@ -393,6 +401,8 @@ module Fluent
           end
 
           case ein.name_type
+          when :audit_full, :audit_prefix
+            prefix = ".audit"
           when :operations_full, :operations_prefix
             prefix = ".operations"
           when :project_full, :project_prefix
@@ -446,8 +456,8 @@ module Fluent
       end
     end
 
-    def transform_eventrouter(tag, record)
-      return unless @process_kubernetes_events
+    def transform_eventrouter(tag, record, fmtr)
+      return if fmtr.nil? || !fmtr.process_kubernetes_events
       if record.key?("event") && record["event"].respond_to?(:key?)
         if record.key?("verb")
           record["event"]["verb"] = record.delete("verb")
